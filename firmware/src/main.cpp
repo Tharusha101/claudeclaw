@@ -263,7 +263,7 @@ void setupLink() {
   Serial.println(WIFI_SSID);
   String path = String("/keytag?token=") + KEYTAG_TOKEN;
 #if defined(BRIDGE_TLS) && BRIDGE_TLS
-#ifdef BRIDGE_CA_CERT
+#ifdef BRIDGE_HAS_CA
   webSocket.beginSslWithCA(BRIDGE_HOST, BRIDGE_PORT, path.c_str(), BRIDGE_CA_CERT);  // validated wss
 #else
   webSocket.beginSSL(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // wss, cert NOT validated (set BRIDGE_CA_CERT)
@@ -285,6 +285,7 @@ void loopLink() {
     wifiUp = true;
     Serial.print("[wifi] connected, IP ");
     Serial.println(WiFi.localIP());
+    configTime(0, 0, "pool.ntp.org", "time.google.com");  // real time for TLS cert validity
   } else if (!wifiUp && millis() - lastLog > 3000) {
     lastLog = millis();
     Serial.print("[wifi] status ");

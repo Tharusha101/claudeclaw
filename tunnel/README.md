@@ -39,18 +39,27 @@ Grab the ROOT CA of the edge cert and paste it into `firmware/src/secrets.h` as
 openssl s_client -connect keytag.yourdomain.com:443 -servername keytag.yourdomain.com -showcerts </dev/null
 ```
 
-Take the **last** certificate in the chain (the root), paste it as the PEM
-`BRIDGE_CA_CERT`, and set in `secrets.h`:
+Take the **root** of the chain (for Cloudflare Universal SSL this is often
+`GTS Root R4` / `ISRG Root X1`), and set it in `secrets.h` — as a **variable + a
+flag**, not a bare `#define` (a multi-line raw string in a macro breaks the
+preprocessor):
 
 ```c
 #define BRIDGE_HOST "keytag.yourdomain.com"
 #define BRIDGE_PORT 443
 #define BRIDGE_TLS  1
-#define BRIDGE_CA_CERT R"EOF( ...root CA PEM... )EOF"
+#define BRIDGE_HAS_CA 1
+static const char BRIDGE_CA_CERT[] = R"EOF(
+-----BEGIN CERTIFICATE-----
+...root CA...
+-----END CERTIFICATE-----
+)EOF";
 ```
 
-Then `pio run -e esp32-c3-wifi -t upload`. With `BRIDGE_CA_CERT` set the firmware
-uses `beginSslWithCA` and rejects any cert that doesn't chain to that root.
+Then `pio run -e esp32-c3-wifi -t upload`. With `BRIDGE_HAS_CA` set the firmware
+uses `beginSslWithCA` and rejects any cert that doesn't chain to that root. It
+NTP-syncs time on WiFi connect so the cert's validity dates verify. If Cloudflare
+later rotates to a different CA family, re-extract and reflash.
 
 ## 5. Use it
 
