@@ -45,5 +45,8 @@ AFFORDANCE = (" " + _DENY_AFFORDANCE).ljust(COLS - len(_ALLOW_AFFORDANCE)) + _AL
 KEY_ALLOW = "y"
 KEY_DENY = "n"
 
+# ── Serial link to the C3 keytag (phase 2a bring-up) ────────────────────────
+SERIAL_BAUD = 115200
+
 # ── Tracing ────────────────────────────────────────────────────────────────
 TRACE_PATH = "trace.jsonl"

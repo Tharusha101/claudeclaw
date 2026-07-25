@@ -5,3 +5,7 @@ trace.jsonl
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# PlatformIO
+firmware/.pio/
+firmware/.vscode/

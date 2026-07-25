@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 import uvicorn
@@ -27,8 +28,25 @@ def create_app(transport: Transport, trace_path: str = config.TRACE_PATH) -> Fas
     return app
 
 
+def _build_transport(serial_port: str | None, baud: int) -> Transport:
+    if serial_port:
+        from transport.serial_link import SerialTransport  # lazy: needs pyserial
+
+        return SerialTransport.open(serial_port, baud)
+    return TerminalTransport()
+
+
 def main() -> None:
-    app = create_app(TerminalTransport())
+    parser = argparse.ArgumentParser(description="crabtag bridge")
+    parser.add_argument(
+        "--serial",
+        metavar="PORT",
+        help="drive the C3 keytag over USB serial on PORT (e.g. COM5); default is terminal stub",
+    )
+    parser.add_argument("--baud", type=int, default=config.SERIAL_BAUD)
+    args = parser.parse_args()
+
+    app = create_app(_build_transport(args.serial, args.baud))
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning")
 
 

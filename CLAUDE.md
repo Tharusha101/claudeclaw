@@ -4,13 +4,15 @@
 
 A bridge daemon connecting Claude Code to a physical keychain device: an ESP32-C3 board shaped like the Claude Code crab, with a 240×240 TFT and three buttons. The keytag shows what Claude Code is doing and lets me approve or deny permission prompts without taking my phone out.
 
-This repo contains **only the bridge**. Firmware and the Android relay app are separate, later phases. Do not scaffold them.
+This repo is the bridge, plus (from phase 2a) the C3 bring-up firmware under `firmware/`. The Android relay app is still a separate, later phase — do not scaffold it.
 
-## Status: phase 1
+## Status: phase 2a (serial bring-up)
 
-Phase 1 proves the loop with no hardware. The "keytag" is a terminal stub that prints what the screen would show and reads a keypress from stdin. If phase 1 isn't pleasant to use daily, the hardware never gets built.
+Phase 1 proved the loop with no hardware: a terminal stub printing the screen and reading a keypress from stdin. It is done and stays as the default transport.
 
-No BLE, no WebSocket, no phone-relay code in phase 1. The transport interface exists so those can slot in later — leave them unimplemented.
+Phase 2a puts a real display in the loop over the simplest link. The bring-up rig is an **ESP32-C3 mini + ILI9341 240×320 SPI display + three physical buttons**, driven over **USB serial** (`transport/serial_link.py`, firmware in `firmware/`). Note the panel differs from the eventual keychain display (1.3" 240×240) — this is fine because all formatting is in `render.py`, so the same 20×8 frame targets both. Do not change render geometry for the bring-up panel.
+
+The end-state transport is **BLE + phone relay** (keytag ↔ BLE ↔ Android relay ↔ bridge), but it is built in order: 2a serial (now) → 2b BLE direct (C3 ↔ bridge, no phone) → 2c phone relay. Do not jump ahead: no BLE, WebSocket, or mobile code until 2a is solid on real hardware.
 
 ## Architecture
 

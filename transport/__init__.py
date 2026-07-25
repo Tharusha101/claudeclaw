@@ -5,6 +5,7 @@ relay slot in behind the same `Transport` interface later.
 """
 
 from transport.base import Transport
+from transport.serial_link import SerialTransport
 from transport.terminal import TerminalTransport
 
-__all__ = ["Transport", "TerminalTransport"]
+__all__ = ["SerialTransport", "Transport", "TerminalTransport"]
