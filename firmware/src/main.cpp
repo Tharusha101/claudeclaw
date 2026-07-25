@@ -263,9 +263,13 @@ void setupLink() {
   Serial.println(WIFI_SSID);
   String path = String("/keytag?token=") + KEYTAG_TOKEN;
 #if defined(BRIDGE_TLS) && BRIDGE_TLS
-  webSocket.beginSSL(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // wss:// (tunnel)
+#ifdef BRIDGE_CA_CERT
+  webSocket.beginSslWithCA(BRIDGE_HOST, BRIDGE_PORT, path.c_str(), BRIDGE_CA_CERT);  // validated wss
 #else
-  webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // ws:// (LAN)
+  webSocket.beginSSL(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // wss, cert NOT validated (set BRIDGE_CA_CERT)
+#endif
+#else
+  webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // plain ws:// (LAN)
 #endif
   webSocket.onEvent(onWsEvent);
   webSocket.setReconnectInterval(3000);

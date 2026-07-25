@@ -1,0 +1,18 @@
+# Cloudflare named-tunnel config for the crabtag bridge.
+# Copy to config.yml and fill in <TUNNEL_ID> and your hostname.
+#
+# The ingress rules are the security boundary: ONLY /keytag reaches the bridge.
+# Everything else (including the unauthenticated /hooks endpoint) returns 404,
+# so a public visitor can never touch the hook. The bridge itself binds
+# localhost (run it with just `--ws`, no `--lan`), so /hooks is also off the LAN.
+
+tunnel: <TUNNEL_ID>
+credentials-file: <TUNNEL_ID>.json
+
+ingress:
+  # The only path the keytag needs — the token-authenticated WebSocket.
+  - hostname: keytag.example.com
+    path: ^/keytag
+    service: http://localhost:8787
+  # Everything else is refused.
+  - service: http_status:404

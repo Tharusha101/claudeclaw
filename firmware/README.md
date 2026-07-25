@@ -76,21 +76,19 @@ the token. The bridge **rejects any connection without the matching token** —
 this channel carries the approval decision, so an unauthenticated peer must
 never be able to send one.
 
-- **LAN test:** `BRIDGE_HOST` = your PC's IP, `BRIDGE_PORT` = 8787, `BRIDGE_TLS` = 0.
-- **Tunnel ("away"):** run a tunnel to the bridge and set `BRIDGE_HOST` = tunnel
-  host, `BRIDGE_PORT` = 443, `BRIDGE_TLS` = 1 (wss). Cloudflare quick tunnel:
-  `cloudflared tunnel --url http://localhost:8787` → use the printed
-  `*.trycloudflare.com` host. Then phone hotspot on → keytag joins it → reaches
-  the bridge from anywhere.
+- **LAN test:** `BRIDGE_HOST` = your PC's IP, `BRIDGE_PORT` = 8787, `BRIDGE_TLS` = 0,
+  and run the bridge with `--ws --lan` (the `--lan` opts the bridge onto the LAN).
+- **Quick tunnel (throwaway proof):** `cloudflared tunnel --url http://localhost:8787`
+  → set `BRIDGE_HOST` = the printed `*.trycloudflare.com`, `BRIDGE_PORT` = 443,
+  `BRIDGE_TLS` = 1. Run the bridge with just `--ws` (localhost). Note: a quick
+  tunnel exposes the *whole* bridge and its URL changes on restart.
+- **Named tunnel (the hardened "away" setup):** stable host, only `/keytag`
+  exposed, validated cert. See **`../tunnel/README.md`**.
 
-⚠️ **Before relying on the tunnel** (all currently open):
-- A **quick tunnel exposes the whole bridge**, including the unauthenticated
-  `/hooks` endpoint. Use a **named tunnel with ingress limited to `/keytag`**, or
-  add auth to `/hooks`.
-- The quick-tunnel **URL is ephemeral** (changes on restart → reflash). A named
-  tunnel (needs a domain) gives a stable host.
-- `beginSSL` here **encrypts but does not validate** Cloudflare's cert (MITM
-  risk over untrusted WiFi). Pin the CA (`beginSslWithCA`) for real "away" use.
+The bridge binds **localhost** for `--ws` (a tunnel reaches it there), keeping it
+off the LAN — use `--lan` only for the direct-WiFi test. Set `BRIDGE_CA_CERT` in
+`secrets.h` to validate the tunnel's cert (otherwise wss is encrypted but
+unvalidated — fine on trusted WiFi, risky on public networks).
 
 A permission prompt from Claude Code flips the display to the text frame; press
 DENY or ALLOW and the decision flows back, then the display returns to the crab

@@ -68,6 +68,12 @@ def main() -> None:
         help="wait for a WiFi keytag to connect over WebSocket (needs KEYTAG_TOKEN in env)",
     )
     parser.add_argument("--baud", type=int, default=config.SERIAL_BAUD)
+    parser.add_argument(
+        "--lan",
+        action="store_true",
+        help="with --ws, also listen on the LAN (0.0.0.0) for a direct WiFi keytag; "
+        "omit when behind a tunnel — cloudflared connects on localhost",
+    )
     args = parser.parse_args()
 
     if args.ws:
@@ -88,9 +94,10 @@ def main() -> None:
     else:
         app = create_app(TerminalTransport())
 
-    # WiFi keytags connect from the network, so --ws must listen on all
-    # interfaces; every other mode only serves the local Claude Code hook.
-    host = "0.0.0.0" if args.ws else config.HOST  # noqa: S104
+    # Behind a tunnel (the intended --ws deployment) cloudflared connects on
+    # localhost, so bind localhost by default and keep the bridge off the LAN.
+    # --lan opts into 0.0.0.0 for a direct-WiFi keytag test only.
+    host = "0.0.0.0" if (args.ws and args.lan) else config.HOST  # noqa: S104
     uvicorn.run(app, host=host, port=config.PORT, log_level="warning")
 
 
