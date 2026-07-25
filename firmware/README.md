@@ -1,60 +1,51 @@
 # crabtag keytag firmware — phase 2a
 
-ESP32-C3 mini + ILI9341 240×320 SPI display + three buttons. Renders frames the
-bridge pushes over USB serial and reports button presses back. All layout lives
-in `render.py` on the bridge; this firmware just draws lines and reads buttons.
+ESP32-C3 mini + ST7735 1.8" 128×160 SPI display + three buttons. Renders frames
+the bridge pushes over USB serial and reports button presses back. All layout
+lives in `render.py` on the bridge; the firmware draws the same 20×8 frame at
+text size 1 so it fits 128 px wide.
 
-> Assumes the **SPI** ILI9341 module (the one with a `CS/DC/RST/SDI/SCK/MISO`
-> header). If yours is the 8-bit **parallel** Arduino shield, this pinout does
-> not apply — say so before wiring.
+> Display driver is **ST7735** (module pins `LED/SCK/SDA/A0/RST/CS/GND/VCC`,
+> where `SDA`=MOSI and `A0`=DC). Init uses `INITR_BLACKTAB`; if colors or edges
+> look off, try `INITR_GREENTAB` / `INITR_REDTAB` in `src/main.cpp`.
 
-Two build environments share `src/main.cpp`: `esp32` (classic WROOM-32 DevKit,
-the bring-up board now) and `esp32-c3` (the eventual keytag MCU). Pick with `-e`.
+Two build environments share `src/main.cpp`: `esp32-c3` (the board in use, and
+the default) and `esp32` (classic WROOM-32 DevKit fallback). Pick with `-e`.
 
-## Wiring — ESP32 (WROOM-32 DevKit) — `-e esp32`
+## Wiring — ESP32-C3 mini — `-e esp32-c3` (default)
 
-Display module → ESP32 (matches the `[env:esp32]` build flags):
-
-Pinout uses only GPIO ≤21, avoiding flash pins (6–11) and UART pins (1/3).
-
-| ILI9341 pin | ESP32 GPIO | note |
+| Display pin | C3 GPIO | note |
 |---|---|---|
-| VCC | 3V3 | if the screen stays blank/white, try VCC → 5V (VIN) instead |
+| VCC | 3V3 | if the screen stays dark, try VCC → 5V |
 | GND | GND | |
-| CS | GPIO5 | |
-| RESET | GPIO4 | |
-| DC / RS | GPIO2 | strapping pin; if upload fails, briefly unplug DC during flash |
-| SDI (MOSI) | GPIO13 | |
-| SCK | GPIO14 | |
-| LED | 3V3 | backlight always on (TFT_BL=-1) |
-| SDO (MISO) | — | unused (TFT_MISO=-1); leave unconnected |
-| T_* (touch) | — | unused; leave unconnected |
+| LED | 3V3 | backlight always on |
+| SCK | GPIO4 | |
+| SDA (MOSI) | GPIO6 | |
+| A0 (DC) | GPIO10 | |
+| RST | GPIO3 | |
+| CS | GPIO7 | |
 
 Buttons — each between the GPIO and GND (internal pull-ups, active-low):
 
-| Button | ESP32 GPIO |
+| Button | C3 GPIO |
 |---|---|
-| DENY (left) | GPIO16 |
-| AUX (middle, reserved) | GPIO17 |
+| DENY (left) | GPIO0 |
+| AUX (middle, reserved) | GPIO1 |
 | ALLOW (right) | GPIO21 |
 
-Do not use GPIO34–39 for buttons — they are input-only with no internal pull-up.
-
-## Wiring — ESP32-C3 mini — `-e esp32-c3`
-
-| ILI9341 | C3 GPIO | | Button | C3 GPIO |
-|---|---|---|---|---|
-| CS→7, RESET→3, DC→10 | | | DENY (left) | GPIO0 |
-| SDI→6, SCK→4, MISO→5 | | | AUX (middle) | GPIO1 |
-| LED→3V3, VCC→3V3 | | | ALLOW (right) | GPIO21 |
-
 GPIO2/8/9 (strapping) and GPIO18/19 (native USB) are deliberately avoided.
+
+## Wiring — ESP32 (WROOM-32 DevKit) — `-e esp32`
+
+Same display pins remapped to GPIO ≤21 (avoiding flash pins 6–11, UART 1/3):
+SCK→14, SDA→13, A0→2, RST→4, CS→5, LED/VCC→3V3. Buttons: DENY→16, AUX→17,
+ALLOW→21. (Do not use GPIO34–39 for buttons — input-only, no pull-up.)
 
 ## Build & flash
 
 ```sh
 cd firmware
-pio run -t upload          # default env is esp32; add -e esp32-c3 for the C3
+pio run -t upload          # default env is esp32-c3; add -e esp32 for the WROOM
 pio device monitor         # expect "READY", then "BTN ..." lines on each press
 ```
 
