@@ -247,8 +247,10 @@ bool wsConnected = false;
 void onWsEvent(WStype_t type, uint8_t* payload, size_t length) {
   if (type == WStype_CONNECTED) {
     wsConnected = true;
+    Serial.println("[ws] connected to bridge");
   } else if (type == WStype_DISCONNECTED) {
     wsConnected = false;
+    Serial.println("[ws] disconnected");
   } else if (type == WStype_TEXT) {
     for (size_t i = 0; i < length; i++) feedByte((char)payload[i]);
   }
@@ -257,13 +259,31 @@ void onWsEvent(WStype_t type, uint8_t* payload, size_t length) {
 void setupLink() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);  // non-blocking; the WS client retries once WiFi is up
+  Serial.print("[wifi] joining ");
+  Serial.println(WIFI_SSID);
   String path = String("/keytag?token=") + KEYTAG_TOKEN;
   webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path);
   webSocket.onEvent(onWsEvent);
   webSocket.setReconnectInterval(3000);
 }
 
-void loopLink() { webSocket.loop(); }
+void loopLink() {
+  // One-shot WiFi log + periodic status while not up. Status codes:
+  // 1=NO_SSID (name wrong / 5GHz), 4=CONNECT_FAILED (bad password), 3=CONNECTED.
+  static bool wifiUp = false;
+  static uint32_t lastLog = 0;
+  wl_status_t st = WiFi.status();
+  if (!wifiUp && st == WL_CONNECTED) {
+    wifiUp = true;
+    Serial.print("[wifi] connected, IP ");
+    Serial.println(WiFi.localIP());
+  } else if (!wifiUp && millis() - lastLog > 3000) {
+    lastLog = millis();
+    Serial.print("[wifi] status ");
+    Serial.println((int)st);
+  }
+  webSocket.loop();
+}
 
 void sendButtonLink(const char* name) {
   if (wsConnected) {

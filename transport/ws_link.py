@@ -48,10 +48,13 @@ class WsTransport(Transport):
             async for message in websocket.iter_text():
                 self._feed(message)
         finally:
-            self._connected.clear()
-            self._disconnected.set()
+            # Only tear down shared state if THIS socket is still the active one.
+            # A stale socket (replaced by a fresh reconnect) must not clobber the
+            # live connection's state or spuriously signal a disconnect.
             if self._ws is websocket:
                 self._ws = None
+                self._connected.clear()
+                self._disconnected.set()
 
     def _feed(self, text: str) -> None:
         self._buf += text

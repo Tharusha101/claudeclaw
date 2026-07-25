@@ -26,6 +26,26 @@ class _FakeWS:
         self.sent.append(text)
 
 
+class _HoldWS:
+    """A socket whose recv loop blocks until released — to model overlapping
+    connections (a stale one tearing down while a fresh one is active)."""
+
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self._release = asyncio.Event()
+
+    async def send_text(self, text: str) -> None:
+        self.sent.append(text)
+
+    async def iter_text(self):
+        await self._release.wait()
+        return
+        yield ""  # noqa: unreachable — makes this an async generator
+
+    def release(self) -> None:
+        self._release.set()
+
+
 def test_push_and_button_round_trip():
     async def scenario():
         t = WsTransport("tok")
@@ -53,6 +73,26 @@ def test_push_with_no_keytag_fails_closed(monkeypatch):
 
     with pytest.raises(ConnectionError):
         asyncio.run(scenario())
+
+
+def test_stale_socket_teardown_does_not_clobber_active_connection():
+    # Regression: an old socket's teardown must not disconnect a fresh one.
+    async def scenario():
+        t = WsTransport("tok")
+        a, b = _HoldWS(), _HoldWS()
+        a_task = asyncio.create_task(t.register(a))
+        await asyncio.sleep(0.01)  # a active
+        b_task = asyncio.create_task(t.register(b))
+        await asyncio.sleep(0.01)  # b replaces a as the active socket
+        a.release()  # the stale socket ends
+        await asyncio.sleep(0.01)
+        result = (t._ws is b, not t._disconnected.is_set())
+        b.release()
+        await asyncio.gather(a_task, b_task)
+        return result
+
+    active_is_b, not_disconnected = asyncio.run(scenario())
+    assert active_is_b and not_disconnected
 
 
 def _app():
