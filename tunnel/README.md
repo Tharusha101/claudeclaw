@@ -65,3 +65,24 @@ later rotates to a different CA family, re-extract and reflash.
 
 Phone hotspot on → keytag joins it → reaches `wss://keytag.yourdomain.com/keytag`
 from anywhere. Prompts appear on the keytag; buttons answer them.
+
+## Always-on tunnel (Windows)
+
+`cloudflared service install` does **not** work for a *locally-managed* tunnel on
+Windows — it registers a bare `cloudflared.exe` service with no `tunnel run`
+command, which just crash-loops. Use a **logon scheduled task** running the
+proven `tunnel run` instead (elevated PowerShell, once):
+
+```powershell
+$exe = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
+$action  = New-ScheduledTaskAction -Execute $exe -Argument 'tunnel --config "C:\Users\<you>\.cloudflared\config.yml" run crabtag'
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "crabtag-tunnel" -Action $action -Trigger $trigger -Settings $settings -User "$env:USERNAME" -RunLevel Limited -Force
+Start-ScheduledTask -TaskName "crabtag-tunnel"
+```
+
+Survives reboots; runs while you're logged in. The **bridge** (`bridge.py --ws`)
+is the other half — start it when you're working. For run-while-logged-out you'd
+need the token-based service (`cloudflared service install <token>`) with ingress
+configured in the Cloudflare dashboard instead of `config.yml`.
