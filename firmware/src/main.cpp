@@ -65,7 +65,11 @@ constexpr int MARGIN_X = 6;
 constexpr int MARGIN_Y = 4;
 constexpr int LINE_H = 15;  // 8 rows * 15 = 120, fits the 128 px landscape height
 
-uint16_t CRAB;  // Claude-crab coral; set in setup() via color565
+uint16_t CRAB;      // Claude-crab coral (header bar + idle background)
+uint16_t DENY_COL;  // red deny button
+uint16_t ALLOW_COL; // green allow button
+uint16_t DIM;       // muted grey for secondary text
+// all set in setup() via color565
 
 enum class Mode { IDLE, PROMPT };
 Mode mode = Mode::IDLE;
@@ -135,21 +139,47 @@ void animateIdle() {
 
 // ================= prompt frame =================
 
+// render.py's fixed row layout (see render.py): 0 header, 1 divider,
+// 2-4 payload, 5 context, 6 divider, 7 affordance. The firmware styles it:
+// the divider/affordance rows become graphical chrome, the rest is drawn verbatim.
+void drawButton(int x, int y, int w, int h, uint16_t bg, const char* label) {
+  tft.fillRoundRect(x, y, w, h, 4, bg);
+  const int tx = x + (w - (int)strlen(label) * 6) / 2;
+  const int ty = y + (h - 8) / 2;
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setCursor(tx, ty);
+  tft.print(label);
+}
+
 void drawFrame() {
   mode = Mode::PROMPT;
   tft.fillScreen(ST77XX_BLACK);
-  tft.setTextSize(1);  // 6x8 font; 20 cols * 6 = 120 px, fits the 160 px width
-  for (int r = 0; r < ROWS; r++) {
-    uint16_t colour = ST77XX_WHITE;
-    if (r == 0) {
-      colour = CRAB;  // tool-name row in the crab colour
-    } else if (r == ROWS - 1) {
-      colour = ST77XX_GREEN;  // affordance row
-    }
-    tft.setTextColor(colour, ST77XX_BLACK);
-    tft.setCursor(MARGIN_X, MARGIN_Y + r * LINE_H);
+  tft.setTextSize(1);
+
+  // header bar: tool name + queue depth (row 0), dark text on coral
+  tft.fillRect(0, 0, SCREEN_W, 16, CRAB);
+  tft.setTextColor(ST77XX_BLACK);
+  tft.setCursor(5, 4);
+  tft.print(frame[0]);
+
+  // command payload (rows 2-4), white
+  tft.setTextColor(ST77XX_WHITE);
+  int y = 28;
+  for (int r = 2; r <= 4; r++) {
+    tft.setCursor(6, y);
     tft.print(frame[r]);
+    y += 13;
   }
+
+  // context (row 5), muted
+  tft.setTextColor(DIM);
+  tft.setCursor(6, 74);
+  tft.print(frame[5]);
+
+  // deny / allow buttons mirroring the physical left / right buttons
+  drawButton(6, 104, 68, 20, DENY_COL, "DENY");
+  drawButton(SCREEN_W - 6 - 68, 104, 68, 20, ALLOW_COL, "ALLOW");
 }
 
 // ================= serial in =================
@@ -226,6 +256,9 @@ void setup() {
   tft.initR(INITR_BLACKTAB);  // 1.8" 128x160; if colors/edges look off, try INITR_GREENTAB
   tft.setRotation(1);         // landscape 160x128 (try 3 to flip 180°)
   CRAB = tft.color565(205, 92, 70);  // Claude coral (green pulled down; ST7735 renders green hot)
+  DENY_COL = tft.color565(198, 58, 52);
+  ALLOW_COL = tft.color565(58, 158, 92);
+  DIM = tft.color565(150, 150, 150);
 
   enterIdle();
   Serial.println("READY");
