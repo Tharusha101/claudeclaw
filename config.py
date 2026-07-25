@@ -56,6 +56,8 @@ BLE_NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # bridge -> keytag (write)
 BLE_NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # keytag -> bridge (notify)
 BLE_SCAN_TIMEOUT_S = 15.0
 BLE_CHUNK = 20  # write frames in MTU-safe chunks; the keytag reassembles by newline
+BLE_RECONNECT_TRIES = 3  # reconnect attempts before a prompt fails closed (deny)
+BLE_RECONNECT_BACKOFF_S = 1.5
 
 # ── Tracing ────────────────────────────────────────────────────────────────
 TRACE_PATH = "trace.jsonl"
