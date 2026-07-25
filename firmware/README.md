@@ -49,17 +49,34 @@ pio run -t upload          # default env is esp32-c3; add -e esp32 for the WROOM
 pio device monitor         # expect "READY", then "BTN ..." lines on each press
 ```
 
-On boot the screen shows the idle **crab eyes** (on coral). The firmware is both
-a serial and a BLE endpoint, so drive it either way:
+On boot the screen shows the idle **crab eyes** (on coral). The link is chosen at
+build time:
+
+| Build env | Link | Bridge |
+|---|---|---|
+| `esp32-c3` (default) | BLE ("home") | `uv run python bridge.py --ble` |
+| `esp32-c3-wifi` | WiFi/WebSocket ("away") | `KEYTAG_TOKEN=... uv run python bridge.py --ws` |
+| — | USB serial (any build) | `uv run python bridge.py --serial COM5` |
+
+All three carry the same `FRAME`/`IDLE`/`BTN` line protocol.
+
+### WiFi build ("away" mode)
+
+Copy `src/secrets.h.example` to `src/secrets.h` (gitignored) and fill in your
+WiFi/hotspot SSID + password, a long random `KEYTAG_TOKEN`, and the bridge's
+host/port as reachable from the keytag. Then:
 
 ```sh
-uv run python bridge.py --serial COM5   # USB serial (pio device list shows the port)
-uv run python bridge.py --ble           # BLE: scans for the "crabtag" device
+pio run -e esp32-c3-wifi -t upload
+KEYTAG_TOKEN=<same-token> uv run python bridge.py --ws   # on the PC
 ```
 
-Over BLE the USB cable is only power. The keytag advertises as `crabtag` using
-the Nordic UART Service; the bridge writes frames to RX and receives button
-presses as TX notifications — the same line protocol as serial.
+The keytag joins WiFi and opens a WebSocket to the bridge, authenticating with
+the token. The bridge **rejects any connection without the matching token** —
+this channel carries the approval decision, so an unauthenticated peer must
+never be able to send one. For a local test, point `BRIDGE_HOST` at your PC's
+LAN IP; for true "away" use, put the bridge behind a tunnel and point the keytag
+at that (wss + a public host — a later step).
 
 A permission prompt from Claude Code flips the display to the text frame; press
 DENY or ALLOW and the decision flows back, then the display returns to the crab

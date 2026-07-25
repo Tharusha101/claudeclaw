@@ -9,3 +9,6 @@ trace.jsonl
 # PlatformIO
 firmware/.pio/
 firmware/.vscode/
+
+# Firmware secrets (WiFi creds + keytag token) — never commit
+firmware/src/secrets.h

@@ -16,14 +16,23 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <Arduino.h>
-#include <NimBLEDevice.h>
 #include <SPI.h>
 
+// The link is chosen at build time: KEYTAG_WIFI -> WiFi/WebSocket ("away"),
+// otherwise BLE ("home"). The display, buttons, and line parser are shared.
+#ifdef KEYTAG_WIFI
+#include <WebSocketsClient.h>
+#include <WiFi.h>
+
+#include "secrets.h"  // WIFI_SSID / WIFI_PASS / KEYTAG_TOKEN / BRIDGE_HOST / BRIDGE_PORT
+#else
+#include <NimBLEDevice.h>
 // Nordic UART Service: the line protocol over BLE. Bridge writes frames to RX,
 // the keytag notifies button presses on TX. Same bytes as the serial link.
 #define NUS_SERVICE "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 #define NUS_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define NUS_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#endif
 
 // Pins come from build flags (see platformio.ini) so one source serves both boards.
 // A0 on the module is DC; SDA is MOSI.
@@ -227,7 +236,43 @@ void pollSerial() {
   while (Serial.available()) feedByte((char)Serial.read());
 }
 
-// ================= BLE (Nordic UART Service) =================
+// ================= link: WiFi/WebSocket ("away") or BLE ("home") =================
+// Each variant provides setupLink(), loopLink(), and sendButtonLink(name).
+
+#ifdef KEYTAG_WIFI
+
+WebSocketsClient webSocket;
+bool wsConnected = false;
+
+void onWsEvent(WStype_t type, uint8_t* payload, size_t length) {
+  if (type == WStype_CONNECTED) {
+    wsConnected = true;
+  } else if (type == WStype_DISCONNECTED) {
+    wsConnected = false;
+  } else if (type == WStype_TEXT) {
+    for (size_t i = 0; i < length; i++) feedByte((char)payload[i]);
+  }
+}
+
+void setupLink() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);  // non-blocking; the WS client retries once WiFi is up
+  String path = String("/keytag?token=") + KEYTAG_TOKEN;
+  webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path);
+  webSocket.onEvent(onWsEvent);
+  webSocket.setReconnectInterval(3000);
+}
+
+void loopLink() { webSocket.loop(); }
+
+void sendButtonLink(const char* name) {
+  if (wsConnected) {
+    String msg = String("BTN ") + name + "\n";
+    webSocket.sendTXT(msg);
+  }
+}
+
+#else  // BLE (Nordic UART Service)
 
 NimBLECharacteristic* txChar = nullptr;
 bool bleConnected = false;
@@ -247,7 +292,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   }
 };
 
-void setupBLE() {
+void setupLink() {
   NimBLEDevice::init("crabtag");
   NimBLEServer* server = NimBLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
@@ -264,6 +309,18 @@ void setupBLE() {
   adv->setScanResponse(true);
   NimBLEDevice::startAdvertising();
 }
+
+void loopLink() {}
+
+void sendButtonLink(const char* name) {
+  if (txChar != nullptr && bleConnected) {
+    String msg = String("BTN ") + name + "\n";
+    txChar->setValue((uint8_t*)msg.c_str(), msg.length());
+    txChar->notify();
+  }
+}
+
+#endif
 
 // ================= buttons =================
 
@@ -283,11 +340,7 @@ Button buttons[] = {
 void sendButton(const char* name) {
   Serial.print("BTN ");
   Serial.println(name);  // serial path (and handy debug)
-  if (txChar != nullptr && bleConnected) {
-    String msg = String("BTN ") + name + "\n";
-    txChar->setValue((uint8_t*)msg.c_str(), msg.length());
-    txChar->notify();
-  }
+  sendButtonLink(name);  // BLE notify or WebSocket send, per build
 }
 
 void pollButtons() {
@@ -317,12 +370,13 @@ void setup() {
   ALLOW_COL = tft.color565(58, 158, 92);
   DIM = tft.color565(150, 150, 150);
 
-  setupBLE();
+  setupLink();
   enterIdle();
   Serial.println("READY");
 }
 
 void loop() {
+  loopLink();
   pollSerial();
   pollButtons();
   if (mode == Mode::IDLE) {

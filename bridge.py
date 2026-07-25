@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -27,6 +28,7 @@ def create_app(
     transport: Transport | None = None,
     trace_path: str = config.TRACE_PATH,
     connect: Connect | None = None,
+    keytag_token: str = "",
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -39,6 +41,7 @@ def create_app(
 
     app = FastAPI(title="crabtag bridge", lifespan=lifespan)
     app.state.transport = transport
+    app.state.keytag_token = keytag_token  # for the WiFi keytag WebSocket auth
     app.state.lock = asyncio.Lock()  # serialize prompts onto the single screen
     app.state.waiting = 0  # in-flight PermissionRequests -> rendered queue depth
     app.state.trace_path = trace_path
@@ -59,10 +62,22 @@ def main() -> None:
         action="store_true",
         help="drive the C3 keytag over BLE (scans for the 'crabtag' device)",
     )
+    transport.add_argument(
+        "--ws",
+        action="store_true",
+        help="wait for a WiFi keytag to connect over WebSocket (needs KEYTAG_TOKEN in env)",
+    )
     parser.add_argument("--baud", type=int, default=config.SERIAL_BAUD)
     args = parser.parse_args()
 
-    if args.ble:
+    if args.ws:
+        token = os.environ.get("KEYTAG_TOKEN", "")
+        if not token:
+            parser.error("--ws requires a shared secret in KEYTAG_TOKEN (must match the firmware)")
+        from transport.ws_link import WsTransport
+
+        app = create_app(WsTransport(token), keytag_token=token)
+    elif args.ble:
         from transport.ble_link import BleTransport  # lazy: needs bleak
 
         app = create_app(connect=BleTransport.connect)

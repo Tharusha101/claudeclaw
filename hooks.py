@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import JSONResponse
 
 import config
@@ -31,6 +32,25 @@ from render import render
 from transport.base import Transport
 
 router = APIRouter()
+
+
+@router.websocket(config.WS_PATH)
+async def keytag_socket(websocket: WebSocket) -> None:
+    """Inbound WebSocket from a WiFi keytag (phase 2c). Authenticate the shared
+    token before accepting, then hand the socket to the WsTransport. A missing or
+    wrong token is rejected outright — this channel carries approval decisions,
+    so an unauthenticated peer must never be able to send one."""
+    expected = getattr(websocket.app.state, "keytag_token", "")
+    provided = websocket.query_params.get("token", "")
+    if not expected or not secrets.compare_digest(provided, expected):
+        await websocket.close(code=1008)  # policy violation, before accept -> rejected
+        return
+    register = getattr(websocket.app.state.transport, "register", None)
+    if register is None:  # bridge isn't in WebSocket mode
+        await websocket.close(code=1011)
+        return
+    await websocket.accept()
+    await register(websocket)
 
 
 def _respond(decision: Decision) -> JSONResponse:

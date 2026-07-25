@@ -59,5 +59,12 @@ BLE_CHUNK = 20  # write frames in MTU-safe chunks; the keytag reassembles by new
 BLE_RECONNECT_TRIES = 3  # reconnect attempts before a prompt fails closed (deny)
 BLE_RECONNECT_BACKOFF_S = 1.5
 
+# ── WiFi / WebSocket link to the C3 keytag (phase 2c, "away" mode) ───────────
+# The keytag is the client: it connects out to this endpoint (works behind a
+# hotspot / NAT). It authenticates with a shared token (KEYTAG_TOKEN in the
+# bridge's environment; baked into the firmware's secrets.h).
+WS_PATH = "/keytag"
+WS_CONNECT_WAIT_S = 10.0  # how long push_screen waits for the keytag to (re)connect
+
 # ── Tracing ────────────────────────────────────────────────────────────────
 TRACE_PATH = "trace.jsonl"
