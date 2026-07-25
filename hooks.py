@@ -94,6 +94,10 @@ async def _handle(
                     decision = resolve(Outcome.ANSWERED, answer)
                 except TimeoutError:
                     decision = resolve(Outcome.TIMEOUT, None)  # explicit deny
+                try:
+                    await transport.go_idle()  # back to the idle screen
+                except Exception:  # noqa: BLE001 - cosmetic; never affects the decision
+                    pass
         finally:
             state.waiting -= 1
 

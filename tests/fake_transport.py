@@ -17,6 +17,7 @@ class FakeTransport(Transport):
         self._decision = decision
         self._delay = delay
         self.screens: list[list[str]] = []
+        self.idle_calls = 0
 
     async def push_screen(self, lines: list[str]) -> None:
         self.screens.append(lines)
@@ -25,3 +26,6 @@ class FakeTransport(Transport):
         if self._delay:
             await asyncio.sleep(self._delay)  # used to provoke the internal timeout
         return self._decision
+
+    async def go_idle(self) -> None:
+        self.idle_calls += 1

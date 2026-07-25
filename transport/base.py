@@ -21,3 +21,11 @@ class Transport(ABC):
         The internal timeout is enforced by the caller wrapping this in
         `asyncio.wait_for`; an implementation does not need its own deadline.
         """
+
+    async def go_idle(self) -> None:
+        """Return the display to its idle state after a prompt resolves.
+
+        Default no-op: transports without an idle screen (the terminal stub)
+        simply ignore it. Cosmetic — callers must not let it affect a decision.
+        """
+        return None

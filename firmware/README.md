@@ -49,19 +49,27 @@ pio run -t upload          # default env is esp32-c3; add -e esp32 for the WROOM
 pio device monitor         # expect "READY", then "BTN ..." lines on each press
 ```
 
-On boot the screen shows `crabtag / waiting for bridge`. Then run the bridge
-pointed at the board's serial port (`pio device list` shows it):
+On boot the screen shows the idle **crab face** (orange, blinking eyes). Then
+run the bridge pointed at the board's serial port (`pio device list` shows it):
 
 ```sh
 uv run python bridge.py --serial COM5      # your port; /dev/ttyUSB0 on Linux
 ```
 
-A permission prompt from Claude Code now renders on the display; press DENY or
-ALLOW and the decision flows back. AUX is wired but ignored for now.
+A permission prompt from Claude Code flips the display to the text frame; press
+DENY or ALLOW and the decision flows back, then the display returns to the crab
+face. AUX is wired but ignored for now.
+
+## Display states
+
+- **IDLE** — the crab face, drawn and animated by the firmware. Shown on boot and
+  whenever no prompt is pending.
+- **PROMPT** — the 20×8 text frame from `render.py`, drawn verbatim.
 
 ## Protocol (for reference)
 
 ```
-bridge -> C3 :  FRAME 8\n  then 8 lines, each exactly 20 ASCII chars
+bridge -> C3 :  FRAME 8\n  then 8 lines, each exactly 20 ASCII chars   (show prompt)
+                IDLE\n                                                 (show crab face)
 C3 -> bridge :  BTN ALLOW | BTN DENY | BTN AUX      (READY on boot)
 ```

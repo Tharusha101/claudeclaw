@@ -1,15 +1,18 @@
 // crabtag keytag firmware — phase 2a bring-up.
 //
 // Speaks the bridge's serial wire protocol (see transport/serial_link.py):
-//   in :  "FRAME 8\n" then 8 lines of <= 20 chars -> draw them verbatim.
+//   in :  "FRAME 8\n" then 8 lines of <= 20 chars  -> draw the prompt.
+//         "IDLE\n"                                  -> return to the crab face.
 //   out:  "BTN ALLOW" / "BTN DENY" / "BTN AUX" on a press, "READY" on boot.
 //
-// Display: ST7735 1.8" 128x160 over *software* SPI via Adafruit_GFX. Module pins
-// map LED/SCK/SDA/A0/RST/CS -> backlight/clock/mosi/dc/reset/cs. Software SPI
-// bit-bangs on the given GPIOs — slower than hardware SPI, but rock-solid on the
-// ESP32-C3, and our redraw rate is far too low to care. All layout/formatting is
-// decided by render.py on the bridge; this firmware only draws what it is handed:
-// the same 20x8 frame, just rendered at text size 1 so 20 chars fit in 128 px.
+// Two display states:
+//   IDLE   - a Claude-crab face (orange, blinking eyes that glance around). Drawn
+//            by the firmware; this is the one graphic it owns. Shown on boot too,
+//            so the keytag looks alive even before the bridge connects.
+//   PROMPT - the 20x8 text frame from render.py, drawn verbatim at text size 1.
+//
+// Display: ST7735 1.8" 128x160 over software SPI (Adafruit_GFX). Module pins map
+// LED/SCK/SDA/A0/RST/CS -> backlight/clock/mosi/dc/reset/cs.
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
@@ -53,11 +56,19 @@ constexpr uint8_t PIN_DENY = BTN_DENY_PIN;
 constexpr uint8_t PIN_AUX = BTN_AUX_PIN;
 constexpr uint8_t PIN_ALLOW = BTN_ALLOW_PIN;
 
+constexpr int SCREEN_W = 128;
+constexpr int SCREEN_H = 160;
+
 constexpr int COLS = 20;
 constexpr int ROWS = 8;
 constexpr int MARGIN_X = 4;
 constexpr int MARGIN_Y = 8;
 constexpr int LINE_H = 18;  // 8 rows * 18 = 144, fits the 160 px height
+
+uint16_t CRAB;  // Claude-crab coral; set in setup() via color565
+
+enum class Mode { IDLE, PROMPT };
+Mode mode = Mode::IDLE;
 
 String frame[ROWS];
 
@@ -66,16 +77,91 @@ String lineBuf;
 int expectRows = 0;  // >0 while consuming a frame body
 int rowIndex = 0;
 
+// ================= idle crab face =================
+
+constexpr int EYE_Y = 62;
+constexpr int EYE_LX = 40;
+constexpr int EYE_RX = 88;
+constexpr int EYE_R = 18;
+constexpr int PUPIL_R = 8;
+
+int pupilDX = 0;
+int pupilDY = 0;
+bool blinking = false;
+uint32_t blinkAt = 0;     // when the next blink starts
+uint32_t blinkUntil = 0;  // when the current blink ends
+
+void drawEyesOpen() {
+  tft.fillCircle(EYE_LX, EYE_Y, EYE_R, ST77XX_WHITE);
+  tft.fillCircle(EYE_RX, EYE_Y, EYE_R, ST77XX_WHITE);
+  tft.fillCircle(EYE_LX + pupilDX, EYE_Y + pupilDY, PUPIL_R, ST77XX_BLACK);
+  tft.fillCircle(EYE_RX + pupilDX, EYE_Y + pupilDY, PUPIL_R, ST77XX_BLACK);
+}
+
+void drawEyesClosed() {
+  // Wipe the eye area back to face colour, then a happy closed-eye line.
+  tft.fillRect(EYE_LX - EYE_R, EYE_Y - EYE_R, 2 * EYE_R + 1, 2 * EYE_R + 1, CRAB);
+  tft.fillRect(EYE_RX - EYE_R, EYE_Y - EYE_R, 2 * EYE_R + 1, 2 * EYE_R + 1, CRAB);
+  tft.fillRect(EYE_LX - EYE_R + 3, EYE_Y - 2, 2 * EYE_R - 6, 4, ST77XX_WHITE);
+  tft.fillRect(EYE_RX - EYE_R + 3, EYE_Y - 2, 2 * EYE_R - 6, 4, ST77XX_WHITE);
+}
+
+void drawSmile() {
+  const int cx = SCREEN_W / 2;
+  const int my = EYE_Y + EYE_R + 16;
+  for (int t = 0; t < 2; t++) {  // 2 px thick
+    tft.drawLine(cx - 14, my - 3 + t, cx - 6, my + 3 + t, ST77XX_WHITE);
+    tft.drawLine(cx - 6, my + 3 + t, cx + 6, my + 3 + t, ST77XX_WHITE);
+    tft.drawLine(cx + 6, my + 3 + t, cx + 14, my - 3 + t, ST77XX_WHITE);
+  }
+}
+
+void enterIdle() {
+  mode = Mode::IDLE;
+  pupilDX = 0;
+  pupilDY = 0;
+  blinking = false;
+  tft.fillScreen(CRAB);
+  drawEyesOpen();
+  drawSmile();
+  blinkAt = millis() + 2500;
+}
+
+void animateIdle() {
+  const uint32_t now = millis();
+  if (!blinking && now >= blinkAt) {
+    blinking = true;
+    blinkUntil = now + 130;
+    drawEyesClosed();
+  } else if (blinking && now >= blinkUntil) {
+    blinking = false;
+    pupilDX = (int)random(-7, 8);  // glance somewhere new after each blink
+    pupilDY = (int)random(-4, 5);
+    drawEyesOpen();
+    blinkAt = now + 2200 + (uint32_t)random(0, 2600);
+  }
+}
+
+// ================= prompt frame =================
+
 void drawFrame() {
+  mode = Mode::PROMPT;
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextSize(1);  // 6x8 font; 20 cols * 6 = 120 px, fits the 128 px width
   for (int r = 0; r < ROWS; r++) {
-    // Highlight the affordance row (last) so the buttons read at a glance.
-    tft.setTextColor(r == ROWS - 1 ? ST77XX_GREEN : ST77XX_WHITE, ST77XX_BLACK);
+    uint16_t colour = ST77XX_WHITE;
+    if (r == 0) {
+      colour = CRAB;  // tool-name row in the crab colour
+    } else if (r == ROWS - 1) {
+      colour = ST77XX_GREEN;  // affordance row
+    }
+    tft.setTextColor(colour, ST77XX_BLACK);
     tft.setCursor(MARGIN_X, MARGIN_Y + r * LINE_H);
     tft.print(frame[r]);
   }
 }
+
+// ================= serial in =================
 
 void handleLine(const String& line) {
   if (expectRows > 0) {
@@ -93,6 +179,8 @@ void handleLine(const String& line) {
     if (n > ROWS) n = ROWS;
     expectRows = n;
     rowIndex = 0;
+  } else if (line == "IDLE") {
+    enterIdle();
   }
 }
 
@@ -108,7 +196,8 @@ void pollSerial() {
   }
 }
 
-// ---- buttons with a simple debounce on the falling edge ----
+// ================= buttons =================
+
 struct Button {
   uint8_t pin;
   const char* name;
@@ -141,18 +230,20 @@ void setup() {
   pinMode(PIN_AUX, INPUT_PULLUP);
   pinMode(PIN_ALLOW, INPUT_PULLUP);
 
+  randomSeed(micros());
+
   tft.initR(INITR_BLACKTAB);  // 1.8" 128x160; if colors/edges look off, try INITR_GREENTAB
   tft.setRotation(0);         // portrait 128x160
-  tft.fillScreen(ST77XX_BLACK);
+  CRAB = tft.color565(217, 119, 87);  // Claude coral
 
-  frame[0] = "crabtag";
-  frame[2] = "waiting for bridge";
-  drawFrame();
-
+  enterIdle();
   Serial.println("READY");
 }
 
 void loop() {
   pollSerial();
   pollButtons();
+  if (mode == Mode::IDLE) {
+    animateIdle();
+  }
 }

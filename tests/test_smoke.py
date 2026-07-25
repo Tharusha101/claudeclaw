@@ -46,6 +46,7 @@ def test_permission_request_denied_through_fake_transport(tmp_path):
     assert resp.status_code == 200
     assert resp.json() == _expected("deny")
     assert len(fake.screens) == 1 and len(fake.screens[0]) == config.ROWS  # it rendered a frame
+    assert fake.idle_calls == 1  # display returned to idle after the decision
 
 
 @pytest.mark.smoke

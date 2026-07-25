@@ -11,7 +11,7 @@ import queue
 
 import config
 from models import ALLOW, DENY
-from transport.serial_link import SerialTransport, decode_button, encode_frame
+from transport.serial_link import SerialTransport, decode_button, encode_frame, encode_idle
 
 
 def test_encode_frame_is_fixed_shape():
@@ -25,6 +25,10 @@ def test_encode_frame_is_fixed_shape():
 def test_encode_frame_sanitizes_non_ascii():
     # A narrow ASCII wire: non-printable/Unicode collapses to '?', never raw bytes.
     assert b"caf?" in encode_frame(["café"])
+
+
+def test_encode_idle_is_the_idle_command():
+    assert encode_idle() == b"IDLE\n"
 
 
 def test_decode_button_maps_allow_and_deny_only():

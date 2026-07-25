@@ -30,6 +30,7 @@ from transport.base import Transport
 
 FRAME_HEADER = "FRAME"
 BTN_PREFIX = "BTN"
+IDLE_COMMAND = "IDLE"
 
 
 def _sanitize(line: str) -> str:
@@ -45,6 +46,11 @@ def encode_frame(lines: list[str]) -> bytes:
         rows.append(" " * config.COLS)
     body = "".join(row + "\n" for row in rows)
     return f"{FRAME_HEADER} {config.ROWS}\n{body}".encode("ascii")
+
+
+def encode_idle() -> bytes:
+    """The command that returns the keytag to its idle (crab-face) screen."""
+    return f"{IDLE_COMMAND}\n".encode("ascii")
 
 
 def decode_button(line: str) -> Decision | None:
@@ -94,6 +100,9 @@ class SerialTransport(Transport):
 
     async def push_screen(self, lines: list[str]) -> None:
         await asyncio.to_thread(self._port.write, encode_frame(lines))
+
+    async def go_idle(self) -> None:
+        await asyncio.to_thread(self._port.write, encode_idle())
 
     async def await_decision(self) -> Decision:
         self._ensure_reader()
