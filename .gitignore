@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+trace.jsonl
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

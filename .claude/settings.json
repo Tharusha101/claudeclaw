@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://localhost:8787/hooks/permission-request",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}
