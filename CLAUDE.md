@@ -6,13 +6,15 @@ A bridge daemon connecting Claude Code to a physical keychain device: an ESP32-C
 
 This repo is the bridge, plus (from phase 2a) the C3 bring-up firmware under `firmware/`. The Android relay app is still a separate, later phase — do not scaffold it.
 
-## Status: phase 2a (serial bring-up)
+## Status: phase 2b (BLE direct) — done, hardware-verified
 
 Phase 1 proved the loop with no hardware: a terminal stub printing the screen and reading a keypress from stdin. It is done and stays as the default transport.
 
-Phase 2a puts a real display in the loop over the simplest link. The bring-up rig is an **ESP32-C3 mini + ILI9341 240×320 SPI display + three physical buttons**, driven over **USB serial** (`transport/serial_link.py`, firmware in `firmware/`). Note the panel differs from the eventual keychain display (1.3" 240×240) — this is fine because all formatting is in `render.py`, so the same 20×8 frame targets both. Do not change render geometry for the bring-up panel.
+Phase 2a put a real display in the loop over USB serial. The hardware is an **ESP32-C3 mini + ST7735 1.8" 128×160 SPI display + three physical buttons** (the panel the listing sold as ILI9341 is actually an ST7735; all formatting is in `render.py` so the same 20×8 frame retargets any panel). The idle screen is a firmware-drawn Claude-crab face (two eyes on coral); a prompt flips to a styled card with DENY/ALLOW buttons; `IDLE` returns to the face.
 
-The end-state transport is **BLE + phone relay** (keytag ↔ BLE ↔ Android relay ↔ bridge), but it is built in order: 2a serial (now) → 2b BLE direct (C3 ↔ bridge, no phone) → 2c phone relay. Do not jump ahead: no BLE, WebSocket, or mobile code until 2a is solid on real hardware.
+Phase 2b makes the link **BLE** (`transport/ble_link.py`), keytag ↔ bridge direct, no phone. Same line protocol carried over the Nordic UART Service; the firmware is both a serial and BLE endpoint, so `--serial` and `--ble` both work with one build. Verified end-to-end over Bluetooth on real hardware.
+
+The end-state transport is **BLE + phone relay** (keytag ↔ BLE ↔ Android relay ↔ bridge). Order: 2a serial ✓ → 2b BLE direct ✓ → **2c phone relay (next)**. The phone-relay Android app is still a separate, later phase — do not scaffold it here.
 
 ## Architecture
 

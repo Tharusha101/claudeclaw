@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "pyserial>=3.5",
+    "bleak>=0.22",
 ]
 
 # Synced by default on `uv run`, so `uv run pytest -m smoke` works with no extra flags.

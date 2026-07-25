@@ -49,12 +49,17 @@ pio run -t upload          # default env is esp32-c3; add -e esp32 for the WROOM
 pio device monitor         # expect "READY", then "BTN ..." lines on each press
 ```
 
-On boot the screen shows the idle **crab face** (orange, blinking eyes). Then
-run the bridge pointed at the board's serial port (`pio device list` shows it):
+On boot the screen shows the idle **crab eyes** (on coral). The firmware is both
+a serial and a BLE endpoint, so drive it either way:
 
 ```sh
-uv run python bridge.py --serial COM5      # your port; /dev/ttyUSB0 on Linux
+uv run python bridge.py --serial COM5   # USB serial (pio device list shows the port)
+uv run python bridge.py --ble           # BLE: scans for the "crabtag" device
 ```
+
+Over BLE the USB cable is only power. The keytag advertises as `crabtag` using
+the Nordic UART Service; the bridge writes frames to RX and receives button
+presses as TX notifications — the same line protocol as serial.
 
 A permission prompt from Claude Code flips the display to the text frame; press
 DENY or ALLOW and the decision flows back, then the display returns to the crab

@@ -1,13 +1,16 @@
 """Wiring and entrypoint.
 
-`create_app` takes the transport as an argument so a test can inject a fake one.
-`main` wires the real terminal stub and serves it.
+`create_app` takes either a ready transport (terminal / serial / a test fake) or
+an async `connect` factory (BLE, which must connect inside the server's event
+loop). `main` picks one from the command line and serves it.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
@@ -17,9 +20,24 @@ from hooks import router
 from transport.base import Transport
 from transport.terminal import TerminalTransport
 
+Connect = Callable[[], Awaitable[Transport]]
 
-def create_app(transport: Transport, trace_path: str = config.TRACE_PATH) -> FastAPI:
-    app = FastAPI(title="crabtag bridge")
+
+def create_app(
+    transport: Transport | None = None,
+    trace_path: str = config.TRACE_PATH,
+    connect: Connect | None = None,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if connect is not None:  # BLE: connect inside the running loop
+            app.state.transport = await connect()
+        yield
+        aclose = getattr(getattr(app.state, "transport", None), "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+    app = FastAPI(title="crabtag bridge", lifespan=lifespan)
     app.state.transport = transport
     app.state.lock = asyncio.Lock()  # serialize prompts onto the single screen
     app.state.waiting = 0  # in-flight PermissionRequests -> rendered queue depth
@@ -28,25 +46,33 @@ def create_app(transport: Transport, trace_path: str = config.TRACE_PATH) -> Fas
     return app
 
 
-def _build_transport(serial_port: str | None, baud: int) -> Transport:
-    if serial_port:
-        from transport.serial_link import SerialTransport  # lazy: needs pyserial
-
-        return SerialTransport.open(serial_port, baud)
-    return TerminalTransport()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="crabtag bridge")
-    parser.add_argument(
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument(
         "--serial",
         metavar="PORT",
-        help="drive the C3 keytag over USB serial on PORT (e.g. COM5); default is terminal stub",
+        help="drive the C3 keytag over USB serial on PORT (e.g. COM5)",
+    )
+    transport.add_argument(
+        "--ble",
+        action="store_true",
+        help="drive the C3 keytag over BLE (scans for the 'crabtag' device)",
     )
     parser.add_argument("--baud", type=int, default=config.SERIAL_BAUD)
     args = parser.parse_args()
 
-    app = create_app(_build_transport(args.serial, args.baud))
+    if args.ble:
+        from transport.ble_link import BleTransport  # lazy: needs bleak
+
+        app = create_app(connect=BleTransport.connect)
+    elif args.serial:
+        from transport.serial_link import SerialTransport  # lazy: needs pyserial
+
+        app = create_app(SerialTransport.open(args.serial, args.baud))
+    else:
+        app = create_app(TerminalTransport())
+
     uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning")
 
 

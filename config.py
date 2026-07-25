@@ -48,5 +48,14 @@ KEY_DENY = "n"
 # ── Serial link to the C3 keytag (phase 2a bring-up) ────────────────────────
 SERIAL_BAUD = 115200
 
+# ── BLE link to the C3 keytag (phase 2b) ────────────────────────────────────
+# Nordic UART Service: the same line protocol, carried over BLE characteristics.
+BLE_DEVICE_NAME = "crabtag"
+BLE_NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+BLE_NUS_RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # bridge -> keytag (write)
+BLE_NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # keytag -> bridge (notify)
+BLE_SCAN_TIMEOUT_S = 15.0
+BLE_CHUNK = 20  # write frames in MTU-safe chunks; the keytag reassembles by newline
+
 # ── Tracing ────────────────────────────────────────────────────────────────
 TRACE_PATH = "trace.jsonl"

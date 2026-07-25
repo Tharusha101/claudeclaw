@@ -16,7 +16,14 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <Arduino.h>
+#include <NimBLEDevice.h>
 #include <SPI.h>
+
+// Nordic UART Service: the line protocol over BLE. Bridge writes frames to RX,
+// the keytag notifies button presses on TX. Same bytes as the serial link.
+#define NUS_SERVICE "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define NUS_RX "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+#define NUS_TX "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
 // Pins come from build flags (see platformio.ini) so one source serves both boards.
 // A0 on the module is DC; SDA is MOSI.
@@ -205,16 +212,57 @@ void handleLine(const String& line) {
   }
 }
 
-void pollSerial() {
-  while (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\n') {
-      handleLine(lineBuf);
-      lineBuf = "";
-    } else if (c != '\r') {
-      lineBuf += c;
-    }
+// One byte of the FRAME/IDLE stream, from either serial or BLE, into the line
+// buffer. Newline-framed, so it does not matter how BLE chunks the writes.
+void feedByte(char c) {
+  if (c == '\n') {
+    handleLine(lineBuf);
+    lineBuf = "";
+  } else if (c != '\r') {
+    lineBuf += c;
   }
+}
+
+void pollSerial() {
+  while (Serial.available()) feedByte((char)Serial.read());
+}
+
+// ================= BLE (Nordic UART Service) =================
+
+NimBLECharacteristic* txChar = nullptr;
+bool bleConnected = false;
+
+class RxCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic* c) override {
+    std::string v = c->getValue();
+    for (char ch : v) feedByte(ch);
+  }
+};
+
+class ServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer*) override { bleConnected = true; }
+  void onDisconnect(NimBLEServer*) override {
+    bleConnected = false;
+    NimBLEDevice::startAdvertising();  // stay discoverable
+  }
+};
+
+void setupBLE() {
+  NimBLEDevice::init("crabtag");
+  NimBLEServer* server = NimBLEDevice::createServer();
+  server->setCallbacks(new ServerCallbacks());
+
+  NimBLEService* svc = server->createService(NUS_SERVICE);
+  NimBLECharacteristic* rx =
+      svc->createCharacteristic(NUS_RX, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
+  rx->setCallbacks(new RxCallbacks());
+  txChar = svc->createCharacteristic(NUS_TX, NIMBLE_PROPERTY::NOTIFY);
+  svc->start();
+
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  adv->addServiceUUID(NUS_SERVICE);
+  adv->setScanResponse(true);
+  NimBLEDevice::startAdvertising();
 }
 
 // ================= buttons =================
@@ -232,14 +280,23 @@ Button buttons[] = {
     {PIN_AUX, "AUX", false, 0},
 };
 
+void sendButton(const char* name) {
+  Serial.print("BTN ");
+  Serial.println(name);  // serial path (and handy debug)
+  if (txChar != nullptr && bleConnected) {
+    String msg = String("BTN ") + name + "\n";
+    txChar->setValue((uint8_t*)msg.c_str(), msg.length());
+    txChar->notify();
+  }
+}
+
 void pollButtons() {
   uint32_t now = millis();
   for (Button& b : buttons) {
     bool pressed = digitalRead(b.pin) == LOW;
     if (pressed && !b.wasPressed && (now - b.lastEdge) > 40) {
       b.lastEdge = now;
-      Serial.print("BTN ");
-      Serial.println(b.name);
+      sendButton(b.name);
     }
     b.wasPressed = pressed;
   }
@@ -260,6 +317,7 @@ void setup() {
   ALLOW_COL = tft.color565(58, 158, 92);
   DIM = tft.color565(150, 150, 150);
 
+  setupBLE();
   enterIdle();
   Serial.println("READY");
 }
