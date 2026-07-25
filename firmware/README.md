@@ -15,26 +15,28 @@ the bring-up board now) and `esp32-c3` (the eventual keytag MCU). Pick with `-e`
 
 Display module → ESP32 (matches the `[env:esp32]` build flags):
 
+Pinout uses only GPIO ≤21, avoiding flash pins (6–11) and UART pins (1/3).
+
 | ILI9341 pin | ESP32 GPIO | note |
 |---|---|---|
 | VCC | 3V3 | if the screen stays blank/white, try VCC → 5V (VIN) instead |
 | GND | GND | |
-| CS | GPIO15 | |
+| CS | GPIO5 | |
 | RESET | GPIO4 | |
 | DC / RS | GPIO2 | strapping pin; if upload fails, briefly unplug DC during flash |
-| SDI (MOSI) | GPIO23 | |
-| SCK | GPIO18 | |
+| SDI (MOSI) | GPIO13 | |
+| SCK | GPIO14 | |
 | LED | 3V3 | backlight always on (TFT_BL=-1) |
-| SDO (MISO) | GPIO19 | optional for drawing — leave unconnected if you want |
+| SDO (MISO) | — | unused (TFT_MISO=-1); leave unconnected |
 | T_* (touch) | — | unused; leave unconnected |
 
 Buttons — each between the GPIO and GND (internal pull-ups, active-low):
 
 | Button | ESP32 GPIO |
 |---|---|
-| DENY (left) | GPIO25 |
-| AUX (middle, reserved) | GPIO26 |
-| ALLOW (right) | GPIO27 |
+| DENY (left) | GPIO16 |
+| AUX (middle, reserved) | GPIO17 |
+| ALLOW (right) | GPIO21 |
 
 Do not use GPIO34–39 for buttons — they are input-only with no internal pull-up.
 
