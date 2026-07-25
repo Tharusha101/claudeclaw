@@ -14,7 +14,9 @@ Phase 2a put a real display in the loop over USB serial. The hardware is an **ES
 
 Phase 2b makes the link **BLE** (`transport/ble_link.py`), keytag ↔ bridge direct, no phone. Same line protocol carried over the Nordic UART Service; the firmware is both a serial and BLE endpoint, so `--serial` and `--ble` both work with one build. Verified end-to-end over Bluetooth on real hardware.
 
-Order: 2a serial ✓ → 2b BLE direct ✓ → **2c WiFi/WebSocket ("away")**. 2c replaces the original BLE-phone-relay idea: the keytag joins WiFi (a phone's Personal Hotspot when out — no app, works with any phone incl. iPhone) and opens a token-authenticated WebSocket to the bridge (`transport/ws_link.py`, firmware env `esp32-c3-wifi`). The bridge rejects any keytag connection without the shared `KEYTAG_TOKEN` — that channel carries the approval decision. Bridge + firmware are built and unit-tested; live LAN test and the internet tunnel are the remaining steps. One firmware source, link chosen at build time (BLE vs `-D KEYTAG_WIFI`).
+Order: 2a serial ✓ → 2b BLE direct ✓ → **2c WiFi/WebSocket ("away") ✓**. 2c replaces the original BLE-phone-relay idea: the keytag joins WiFi (a phone's Personal Hotspot when out — no app, works with any phone incl. iPhone) and opens a token-authenticated WebSocket to the bridge (`transport/ws_link.py`, firmware env `esp32-c3-wifi`). The bridge rejects any keytag connection without the shared `KEYTAG_TOKEN` — that channel carries the approval decision. Verified end-to-end on hardware over the LAN **and over the public internet via a Cloudflare quick tunnel** (`wss`). One firmware source, link chosen at build time (BLE vs `-D KEYTAG_WIFI`), TLS via `BRIDGE_TLS`.
+
+Known gaps before daily "away" use (all documented in firmware/README): quick-tunnel URL is ephemeral (→ named tunnel needs a domain); the quick tunnel exposes the unauthenticated `/hooks` too (→ ingress-limit to `/keytag` or add hook auth); `beginSSL` encrypts but does not validate the cert (→ pin the CA). These are hardening steps, not blockers to the proven loop.
 
 ## Architecture
 

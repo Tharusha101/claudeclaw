@@ -74,9 +74,23 @@ KEYTAG_TOKEN=<same-token> uv run python bridge.py --ws   # on the PC
 The keytag joins WiFi and opens a WebSocket to the bridge, authenticating with
 the token. The bridge **rejects any connection without the matching token** —
 this channel carries the approval decision, so an unauthenticated peer must
-never be able to send one. For a local test, point `BRIDGE_HOST` at your PC's
-LAN IP; for true "away" use, put the bridge behind a tunnel and point the keytag
-at that (wss + a public host — a later step).
+never be able to send one.
+
+- **LAN test:** `BRIDGE_HOST` = your PC's IP, `BRIDGE_PORT` = 8787, `BRIDGE_TLS` = 0.
+- **Tunnel ("away"):** run a tunnel to the bridge and set `BRIDGE_HOST` = tunnel
+  host, `BRIDGE_PORT` = 443, `BRIDGE_TLS` = 1 (wss). Cloudflare quick tunnel:
+  `cloudflared tunnel --url http://localhost:8787` → use the printed
+  `*.trycloudflare.com` host. Then phone hotspot on → keytag joins it → reaches
+  the bridge from anywhere.
+
+⚠️ **Before relying on the tunnel** (all currently open):
+- A **quick tunnel exposes the whole bridge**, including the unauthenticated
+  `/hooks` endpoint. Use a **named tunnel with ingress limited to `/keytag`**, or
+  add auth to `/hooks`.
+- The quick-tunnel **URL is ephemeral** (changes on restart → reflash). A named
+  tunnel (needs a domain) gives a stable host.
+- `beginSSL` here **encrypts but does not validate** Cloudflare's cert (MITM
+  risk over untrusted WiFi). Pin the CA (`beginSslWithCA`) for real "away" use.
 
 A permission prompt from Claude Code flips the display to the text frame; press
 DENY or ALLOW and the decision flows back, then the display returns to the crab

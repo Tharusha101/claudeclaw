@@ -262,7 +262,11 @@ void setupLink() {
   Serial.print("[wifi] joining ");
   Serial.println(WIFI_SSID);
   String path = String("/keytag?token=") + KEYTAG_TOKEN;
-  webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path);
+#if defined(BRIDGE_TLS) && BRIDGE_TLS
+  webSocket.beginSSL(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // wss:// (tunnel)
+#else
+  webSocket.begin(BRIDGE_HOST, BRIDGE_PORT, path.c_str());  // ws:// (LAN)
+#endif
   webSocket.onEvent(onWsEvent);
   webSocket.setReconnectInterval(3000);
 }
