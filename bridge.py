@@ -88,7 +88,10 @@ def main() -> None:
     else:
         app = create_app(TerminalTransport())
 
-    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="warning")
+    # WiFi keytags connect from the network, so --ws must listen on all
+    # interfaces; every other mode only serves the local Claude Code hook.
+    host = "0.0.0.0" if args.ws else config.HOST  # noqa: S104
+    uvicorn.run(app, host=host, port=config.PORT, log_level="warning")
 
 
 if __name__ == "__main__":
