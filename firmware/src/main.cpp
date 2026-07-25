@@ -225,7 +225,7 @@ void setup() {
 
   tft.initR(INITR_BLACKTAB);  // 1.8" 128x160; if colors/edges look off, try INITR_GREENTAB
   tft.setRotation(1);         // landscape 160x128 (try 3 to flip 180°)
-  CRAB = tft.color565(217, 119, 87);  // Claude coral
+  CRAB = tft.color565(205, 92, 70);  // Claude coral (green pulled down; ST7735 renders green hot)
 
   enterIdle();
   Serial.println("READY");
