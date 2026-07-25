@@ -14,9 +14,20 @@ TFT_eSPI tft = TFT_eSPI();
 
 // Buttons, active-low with internal pull-ups. Left = deny, right = allow,
 // mirroring the on-screen "x deny ... allow v" affordance; middle = aux (reserved).
-constexpr uint8_t PIN_DENY = 0;
-constexpr uint8_t PIN_AUX = 1;
-constexpr uint8_t PIN_ALLOW = 21;
+// Pins come from build flags (see platformio.ini) so one source serves both boards.
+#ifndef BTN_DENY_PIN
+#define BTN_DENY_PIN 0
+#endif
+#ifndef BTN_AUX_PIN
+#define BTN_AUX_PIN 1
+#endif
+#ifndef BTN_ALLOW_PIN
+#define BTN_ALLOW_PIN 21
+#endif
+
+constexpr uint8_t PIN_DENY = BTN_DENY_PIN;
+constexpr uint8_t PIN_AUX = BTN_AUX_PIN;
+constexpr uint8_t PIN_ALLOW = BTN_ALLOW_PIN;
 
 constexpr int COLS = 20;
 constexpr int ROWS = 8;
