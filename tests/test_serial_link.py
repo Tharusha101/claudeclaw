@@ -9,6 +9,8 @@ from __future__ import annotations
 import asyncio
 import queue
 
+import pytest
+
 import config
 from models import ALLOW, DENY
 from transport.serial_link import (
@@ -81,3 +83,60 @@ def test_serial_transport_pushes_a_frame_and_reads_a_button():
         return await asyncio.wait_for(task, timeout=2)
 
     assert asyncio.run(scenario()) is ALLOW
+
+
+# ---- reconnect after a physical unplug/replug ----
+# These drive `_ensure_connected` directly (by pre-setting `_disconnected`)
+# rather than racing the real reader thread against a dying fake port -- the
+# thread-timing story is already covered by the round-trip test above; what
+# needs coverage here is "does a marked-disconnected transport actually use
+# the reconnect callable, on both the prompt path and the cosmetic pushes."
+
+
+def test_push_screen_reconnects_after_a_disconnect():
+    async def scenario():
+        dead, fresh = _FakePort(), _FakePort()
+        transport = SerialTransport(dead, reconnect=lambda: fresh)
+        transport._reader_started = True  # pretend a reader already ran and died
+        transport._disconnected.set()  # ...and detected the port is gone
+
+        await transport.push_screen(["hello"])
+
+        assert transport._port is fresh
+        assert fresh.written and fresh.written[0].startswith(b"FRAME ")
+        assert not dead.written  # never touched the dead port
+
+    asyncio.run(scenario())
+
+
+def test_cosmetic_pushes_also_reconnect():
+    # Unlike BLE/WS, serial has no independent trigger that ever reconnects it
+    # on its own -- push_screen only runs on a real prompt. Mood/usage/plan
+    # pushes must attempt reconnect themselves, or a dropped link never heals.
+    async def scenario():
+        dead, fresh = _FakePort(), _FakePort()
+        transport = SerialTransport(dead, reconnect=lambda: fresh)
+        transport._reader_started = True
+        transport._disconnected.set()
+
+        await transport.set_mood("FOCUS")
+
+        assert fresh.written == [b"MOOD FOCUS\n"]
+
+    asyncio.run(scenario())
+
+
+def test_disconnect_without_a_reconnect_callable_fails_closed():
+    # A bare port with no `reconnect` (e.g. constructed directly in a test, or
+    # any future caller that doesn't know how to reopen it) can't recover --
+    # push_screen must raise so the hook handler denies rather than silently
+    # approving a prompt no one can see.
+    async def scenario():
+        transport = SerialTransport(_FakePort())
+        transport._reader_started = True
+        transport._disconnected.set()
+
+        with pytest.raises(ConnectionError):
+            await transport.push_screen(["hello"])
+
+    asyncio.run(scenario())

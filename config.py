@@ -53,6 +53,10 @@ KEY_DENY = "n"
 
 # ── Serial link to the C3 keytag (phase 2a bring-up) ────────────────────────
 SERIAL_BAUD = 115200
+# A physical unplug kills the OS-level COM port handle; the reconnect on replug
+# mirrors BLE's below.
+SERIAL_RECONNECT_TRIES = 3
+SERIAL_RECONNECT_BACKOFF_S = 1.5
 
 # ── BLE link to the C3 keytag (phase 2b) ────────────────────────────────────
 # Nordic UART Service: the same line protocol, carried over BLE characteristics.
