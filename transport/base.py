@@ -29,3 +29,17 @@ class Transport(ABC):
         simply ignore it. Cosmetic — callers must not let it affect a decision.
         """
         return None
+
+    async def set_mood(self, mood: str) -> None:
+        """Set the idle-face mood to mirror Claude Code's state (sleepy, focus,
+        dizzy, ...). Default no-op; only display transports use it."""
+        return None
+
+    async def set_usage(self, cost: float, tokens: int, percent: int) -> None:
+        """Update the keytag's usage meter. Default no-op; only display transports use it."""
+        return None
+
+    async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
+        """Update the keytag's real plan-limit display (session/week %, from
+        the actual `/usage` command). Default no-op; only display transports use it."""
+        return None

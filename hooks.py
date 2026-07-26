@@ -81,6 +81,82 @@ async def permission_request(request: Request) -> JSONResponse:
     return await _handle(request, state.transport, state, state.trace_path)
 
 
+# ── Mood hooks: informational events that set the idle-face mood ────────────
+# None of these block or return a decision — a bare 200 lets Claude Code carry
+# on, and a failed mood update must never disturb a session.
+
+
+def _ok() -> JSONResponse:
+    return JSONResponse(status_code=200, content={})
+
+
+async def _set_mood(transport: Transport, mood: str) -> None:
+    try:
+        await transport.set_mood(mood)
+    except Exception:  # noqa: BLE001 - cosmetic
+        pass
+
+
+@router.post("/hooks/user-prompt-submit")
+async def user_prompt_submit(request: Request) -> JSONResponse:
+    await _set_mood(request.app.state.transport, "FOCUS")  # a turn is running
+    return _ok()
+
+
+@router.post("/hooks/stop")
+async def stop(request: Request) -> JSONResponse:
+    await _set_mood(request.app.state.transport, "SLEEPY")  # turn finished -> idle
+    return _ok()
+
+
+@router.post("/hooks/notification")
+async def notification(request: Request) -> JSONResponse:
+    await _set_mood(request.app.state.transport, "SLEEPY")  # idle / waiting
+    return _ok()
+
+
+@router.post("/hooks/stop-failure")
+async def stop_failure(request: Request) -> JSONResponse:
+    await _set_mood(request.app.state.transport, "DIZZY")  # rate-limited / overloaded
+    return _ok()
+
+
+# ── Usage meter: OTLP metrics in, totals out ───────────────────────────────
+
+
+async def _push_usage(transport: Transport, meter: Any) -> None:
+    try:
+        await transport.set_usage(meter.cost, meter.tokens, meter.percent)
+    except Exception:  # noqa: BLE001 - cosmetic
+        pass
+
+
+@router.post(config.OTLP_METRICS_PATH)
+async def otlp_metrics(request: Request) -> JSONResponse:
+    """Claude Code's OTLP/JSON metric export -> update the meter -> push to keytag.
+    Always 200 so the exporter keeps sending; telemetry must never break a session."""
+    state = request.app.state
+    try:
+        state.usage.update(json.loads(await request.body()))
+        await _push_usage(state.transport, state.usage)
+    except Exception:  # noqa: BLE001
+        pass
+    return JSONResponse(status_code=200, content={})
+
+
+@router.get("/usage")
+async def usage(request: Request) -> JSONResponse:
+    meter = request.app.state.usage
+    return JSONResponse(
+        {
+            "cost_usd": round(meter.cost, 4),
+            "tokens": meter.tokens,
+            "budget_usd": meter.budget_usd,
+            "percent": meter.percent,
+        }
+    )
+
+
 async def _handle(
     request: Request,
     transport: Transport,

@@ -32,8 +32,9 @@ Claude Code ──OTLP─────────▶ bridge                    �
 ```
 config.py        tunables only; no logic, no imports from other project modules
 models.py        frozen dataclasses for events, approvals, cost snapshots
-hooks.py         HTTP endpoints for Claude Code hook events
-otlp.py          OTLP/HTTP metrics receiver
+hooks.py         HTTP endpoints for Claude Code hook events, incl. the OTLP metrics receiver
+telemetry.py     pure: OTLP payload -> UsageMeter ($ cost/token totals against a set budget)
+plan_usage.py    the real plan-limit % (session/week), by shelling out to `claude`'s /usage
 approvals.py     pure: pending-approval state machine
 render.py        pure: event -> list[str] of screen lines
 transport/
@@ -85,7 +86,9 @@ Return HTTP 200 on every path including deny. Parse the request body raw so fram
 
 ## Cost tracking
 
-Claude Code exports OpenTelemetry natively, gated on `CLAUDE_CODE_ENABLE_TELEMETRY=1`. Set `OTEL_METRICS_EXPORTER=otlp` and point `OTEL_EXPORTER_OTLP_ENDPOINT` at `http://localhost:4318`, which is the bridge. Read `claude_code.cost.usage` (estimated USD per API request) and `claude_code.token.usage` (input, output, cache-read, cache-creation). No collector needed — the bridge is the receiver.
+Claude Code exports OpenTelemetry natively, gated on `CLAUDE_CODE_ENABLE_TELEMETRY=1`. Set `OTEL_METRICS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` (the default is `grpc`; the bridge's `/v1/metrics` receiver only parses JSON, so this must be set explicitly), and point `OTEL_EXPORTER_OTLP_ENDPOINT` at `http://localhost:8787` — the bridge's own port (`config.PORT`), not the OTel collector convention of 4317/4318. Read `claude_code.cost.usage` (estimated USD per API request) and `claude_code.token.usage` (input, output, cache-read, cache-creation). No collector needed — the bridge is the receiver. Export interval defaults to 60s (`OTEL_METRIC_EXPORT_INTERVAL`, ms) — lower it while testing so the keytag updates faster than once a minute.
+
+This `$`/token meter is a self-set budget, not the real plan quota — Claude Code has no API, hook, or OTLP metric for the actual session/weekly limit (confirmed against the docs; don't assume otherwise). The only place that number exists is the interactive `/usage` command, which queries a private endpoint and renders as a TUI dialog. `plan_usage.py` gets it anyway: piping `/usage\n` into a plain (non-`--print`) `claude` invocation whose stdout isn't a TTY makes it fall back to a plain-text render, which the bridge parses and pushes to the keytag's usage screen (`PLAN` command, `--serial`/`--ble`/`--ws` runs only, polling every `config.PLAN_USAGE_POLL_S`). This is unsupported/undocumented behavior riding on a text format Anthropic could change at any time — expect `parse_usage_output` to need updates if it silently starts returning `None`.
 
 ## Screen constraints
 

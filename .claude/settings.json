@@ -3,11 +3,35 @@
     "PermissionRequest": [
       {
         "hooks": [
-          {
-            "type": "http",
-            "url": "http://localhost:8787/hooks/permission-request",
-            "timeout": 600
-          }
+          { "type": "http", "url": "http://localhost:8787/hooks/permission-request", "timeout": 600 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "http", "url": "http://localhost:8787/hooks/user-prompt-submit", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "http", "url": "http://localhost:8787/hooks/stop", "timeout": 10 }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "http", "url": "http://localhost:8787/hooks/notification", "timeout": 10 }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          { "type": "http", "url": "http://localhost:8787/hooks/stop-failure", "timeout": 10 }
         ]
       }
     ]

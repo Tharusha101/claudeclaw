@@ -11,6 +11,12 @@ HOST = "127.0.0.1"
 PORT = 8787
 HOOK_PATH = "/hooks/permission-request"
 
+# ── Usage meter ────────────────────────────────────────────────────────────
+# Claude Code reports cost/tokens but not the real quota, so the keytag shows
+# usage against this budget. Override with KEYTAG_BUDGET_USD.
+USAGE_BUDGET_USD = 20.0
+OTLP_METRICS_PATH = "/v1/metrics"  # point Claude Code's OTLP metrics exporter here
+
 # ── Decision timing ────────────────────────────────────────────────────────
 # Internal deadline for a human answer. Must stay comfortably under the hook's
 # own `timeout` (default 600s) so the bridge answers rather than the hook giving
@@ -65,6 +71,13 @@ BLE_RECONNECT_BACKOFF_S = 1.5
 # bridge's environment; baked into the firmware's secrets.h).
 WS_PATH = "/keytag"
 WS_CONNECT_WAIT_S = 10.0  # how long push_screen waits for the keytag to (re)connect
+
+# ── Real plan-limit usage (the actual `/usage` command, not OTLP) ───────────
+# There is no API/hook/OTLP metric for the real session/week plan-limit bars —
+# `/usage` is an interactive-only command, so this polls it by shelling out to
+# the real `claude` CLI. Keep this well above a few seconds: each poll is a
+# real subprocess spawn plus a network round-trip to Anthropic's usage endpoint.
+PLAN_USAGE_POLL_S = 300.0
 
 # ── Tracing ────────────────────────────────────────────────────────────────
 TRACE_PATH = "trace.jsonl"

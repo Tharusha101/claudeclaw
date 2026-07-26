@@ -31,6 +31,9 @@ from transport.base import Transport
 FRAME_HEADER = "FRAME"
 BTN_PREFIX = "BTN"
 IDLE_COMMAND = "IDLE"
+MOOD_COMMAND = "MOOD"
+MOODS = ("AWAKE", "SLEEPY", "FOCUS", "DIZZY", "SMOKE", "COOK")
+PLAN_COMMAND = "PLAN"
 
 
 def _sanitize(line: str) -> str:
@@ -51,6 +54,25 @@ def encode_frame(lines: list[str]) -> bytes:
 def encode_idle() -> bytes:
     """The command that returns the keytag to its idle (crab-face) screen."""
     return f"{IDLE_COMMAND}\n".encode("ascii")
+
+
+def encode_mood(mood: str) -> bytes:
+    """The command that sets the idle-face mood. Unknown moods fall back to AWAKE."""
+    name = mood.upper()
+    if name not in MOODS:
+        name = "AWAKE"
+    return f"{MOOD_COMMAND} {name}\n".encode("ascii")
+
+
+def encode_usage(cost: float, tokens: int, percent: int) -> bytes:
+    """The command that updates the keytag's usage meter: cost USD, tokens, budget %."""
+    return f"USAGE {cost:.2f} {int(tokens)} {int(percent)}\n".encode("ascii")
+
+
+def encode_plan_usage(session_pct: int, week_pct: int) -> bytes:
+    """The command that updates the keytag's real plan-limit display: the actual
+    `/usage` command's session and week percentages."""
+    return f"{PLAN_COMMAND} {int(session_pct)} {int(week_pct)}\n".encode("ascii")
 
 
 def decode_button(line: str) -> Decision | None:
@@ -103,6 +125,15 @@ class SerialTransport(Transport):
 
     async def go_idle(self) -> None:
         await asyncio.to_thread(self._port.write, encode_idle())
+
+    async def set_mood(self, mood: str) -> None:
+        await asyncio.to_thread(self._port.write, encode_mood(mood))
+
+    async def set_usage(self, cost: float, tokens: int, percent: int) -> None:
+        await asyncio.to_thread(self._port.write, encode_usage(cost, tokens, percent))
+
+    async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
+        await asyncio.to_thread(self._port.write, encode_plan_usage(session_pct, week_pct))
 
     async def await_decision(self) -> Decision:
         self._ensure_reader()

@@ -23,7 +23,14 @@ import config
 from approvals import accepts
 from models import Decision
 from transport.base import Transport
-from transport.serial_link import decode_button, encode_frame, encode_idle
+from transport.serial_link import (
+    decode_button,
+    encode_frame,
+    encode_idle,
+    encode_mood,
+    encode_plan_usage,
+    encode_usage,
+)
 
 
 class BleTransport(Transport):
@@ -125,10 +132,22 @@ class BleTransport(Transport):
 
     async def go_idle(self) -> None:
         # Best-effort only: a disconnected keytag shows its own idle eyes anyway.
+        await self._best_effort(encode_idle())
+
+    async def set_mood(self, mood: str) -> None:
+        await self._best_effort(encode_mood(mood))
+
+    async def set_usage(self, cost: float, tokens: int, percent: int) -> None:
+        await self._best_effort(encode_usage(cost, tokens, percent))
+
+    async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
+        await self._best_effort(encode_plan_usage(session_pct, week_pct))
+
+    async def _best_effort(self, payload: bytes) -> None:
         if self._client is None or not self._client.is_connected:
             return
         try:
-            await self._write_chunks(encode_idle())
+            await self._write_chunks(payload)
         except Exception:  # noqa: BLE001 - cosmetic
             self._disconnected.set()
 

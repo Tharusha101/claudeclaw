@@ -11,7 +11,13 @@ import queue
 
 import config
 from models import ALLOW, DENY
-from transport.serial_link import SerialTransport, decode_button, encode_frame, encode_idle
+from transport.serial_link import (
+    SerialTransport,
+    decode_button,
+    encode_frame,
+    encode_idle,
+    encode_mood,
+)
 
 
 def test_encode_frame_is_fixed_shape():
@@ -29,6 +35,11 @@ def test_encode_frame_sanitizes_non_ascii():
 
 def test_encode_idle_is_the_idle_command():
     assert encode_idle() == b"IDLE\n"
+
+
+def test_encode_mood():
+    assert encode_mood("focus") == b"MOOD FOCUS\n"  # normalizes case
+    assert encode_mood("bogus") == b"MOOD AWAKE\n"  # unknown falls back
 
 
 def test_decode_button_maps_allow_and_deny_only():
