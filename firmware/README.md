@@ -1,4 +1,4 @@
-# crabtag keytag firmware — phase 2a
+# crabtag keytag firmware
 
 ESP32-C3 mini + ST7735 1.8" 128×160 SPI display + three buttons. Renders frames
 the bridge pushes over USB serial and reports button presses back. All layout
