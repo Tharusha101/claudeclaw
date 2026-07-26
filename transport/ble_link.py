@@ -16,6 +16,7 @@ Hardening:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -24,11 +25,13 @@ from approvals import accepts
 from models import Decision
 from transport.base import Transport
 from transport.serial_link import (
+    RESYNC_COMMAND,
     decode_button,
     encode_frame,
     encode_idle,
     encode_mood,
     encode_plan_usage,
+    encode_reminder,
     encode_usage,
 )
 
@@ -50,6 +53,29 @@ class BleTransport(Transport):
         self._disconnected = asyncio.Event()
         self._connect_lock = asyncio.Lock()  # serialize (re)connects
         self._closing = False
+        self._resync_callback: Callable[[], Awaitable[None]] | None = None
+        self._watch_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        self._watch_task = asyncio.create_task(self._watch_connection())
+
+    async def _watch_connection(self) -> None:
+        # Nothing else reconnects BLE proactively -- push_screen only does it as
+        # a side effect of a real permission prompt. Without this, a dropped
+        # link (out of range, the keytag rebooted, ...) only heals on the next
+        # prompt or the next 5-minute plan-usage poll; a RESYNC button press
+        # right after coming back in range would otherwise reach a bridge with
+        # no active connection to receive it on.
+        while True:
+            if self._closing:
+                return
+            if self._client is None or not self._client.is_connected:
+                with contextlib.suppress(Exception):
+                    await self._ensure_connected()
+            await asyncio.sleep(config.BLE_RECONNECT_POLL_S)
+
+    def on_resync(self, callback: Callable[[], Awaitable[None]]) -> None:
+        self._resync_callback = callback
 
     @classmethod
     async def connect(
@@ -114,6 +140,10 @@ class BleTransport(Transport):
         self._buf += data.decode("ascii", "replace")
         while "\n" in self._buf:
             line, self._buf = self._buf.split("\n", 1)
+            if line.strip() == RESYNC_COMMAND:
+                if self._resync_callback is not None:
+                    asyncio.ensure_future(self._resync_callback())
+                continue
             self._inbox.put_nowait((line, self._generation))
 
     async def _write_chunks(self, payload: bytes) -> None:
@@ -143,10 +173,16 @@ class BleTransport(Transport):
     async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
         await self._best_effort(encode_plan_usage(session_pct, week_pct))
 
+    async def send_reminder(self, kind: str) -> None:
+        await self._best_effort(encode_reminder(kind))
+
     async def _best_effort(self, payload: bytes) -> None:
-        if self._client is None or not self._client.is_connected:
-            return
+        # Unlike push_screen (which must reconnect or fail the prompt closed),
+        # a dropped link here is cosmetic -- but it should still actively try
+        # to reconnect rather than silently give up, or a mood/usage/plan-usage
+        # push never recovers except via the next real permission prompt.
         try:
+            await self._ensure_connected()
             await self._write_chunks(payload)
         except Exception:  # noqa: BLE001 - cosmetic
             self._disconnected.set()
@@ -174,6 +210,10 @@ class BleTransport(Transport):
 
     async def aclose(self) -> None:
         self._closing = True
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watch_task
         if self._client is not None:
             try:
                 await self._client.disconnect()

@@ -7,7 +7,9 @@ serial monitor during bring-up:
                     space-padded. The C3 draws them verbatim.
     C3 -> bridge :  "BTN ALLOW\n" / "BTN DENY\n" / "BTN AUX\n" (and "READY" on
                     boot). The bridge maps ALLOW/DENY to a Decision; AUX is
-                    reserved.
+                    reserved. "RESYNC\n" (a long press on idle-DENY) asks for
+                    a fresh mood/usage/plan-usage push right now, out of band
+                    from any pending decision -- see `on_resync`.
 
 `encode_frame` / `decode_button` are pure and test without a serial port. The
 transport reuses the same generation gate as the terminal stub: a button press
@@ -20,8 +22,9 @@ makes them safe for a narrow ASCII wire (sanitize + pad) and frames them.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import config
@@ -35,6 +38,9 @@ IDLE_COMMAND = "IDLE"
 MOOD_COMMAND = "MOOD"
 MOODS = ("AWAKE", "SLEEPY", "FOCUS", "DIZZY", "SMOKE", "COOK")
 PLAN_COMMAND = "PLAN"
+RESYNC_COMMAND = "RESYNC"
+REMIND_COMMAND = "REMIND"
+REMINDER_KINDS = ("GYM", "CODE", "WATER", "SUPPLEMENT")
 
 
 def _sanitize(line: str) -> str:
@@ -76,6 +82,16 @@ def encode_plan_usage(session_pct: int, week_pct: int) -> bytes:
     return f"{PLAN_COMMAND} {int(session_pct)} {int(week_pct)}\n".encode("ascii")
 
 
+def encode_reminder(kind: str) -> bytes:
+    """The command that shows a reminder banner. Unknown kinds are dropped --
+    the firmware only knows how to draw the fixed set, and there's no sensible
+    fallback the way MOOD falls back to AWAKE."""
+    name = kind.upper()
+    if name not in REMINDER_KINDS:
+        name = ""
+    return f"{REMIND_COMMAND} {name}\n".encode("ascii")
+
+
 def decode_button(line: str) -> Decision | None:
     """Map a device line to a Decision. Anything else (AUX, READY, noise) is None."""
     parts = line.strip().split()
@@ -102,6 +118,38 @@ class SerialTransport(Transport):
         self._reader_started = False
         self._disconnected = asyncio.Event()
         self._connect_lock = asyncio.Lock()  # serialize reconnect attempts
+        self._resync_callback: Callable[[], Awaitable[None]] | None = None
+        self._watch_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        # Without this, the reader only starts on the first `await_decision` --
+        # i.e. the first real permission prompt -- so a button press (or a
+        # RESYNC) while idle before that ever happens would just be silently
+        # dropped, unread.
+        self._ensure_reader()
+        self._watch_task = asyncio.create_task(self._watch_connection())
+
+    async def _watch_connection(self) -> None:
+        # A physical unplug marks `_disconnected`, but nothing else retries it
+        # proactively: push_screen/_best_effort only reconnect when something
+        # tries to write. Left alone, the reader that would receive a replugged
+        # keytag's RESYNC button press stays dead until the next real prompt or
+        # the next 5-minute poll tick -- so a long press right after replugging
+        # would silently go nowhere. This closes that gap.
+        while True:
+            if self._disconnected.is_set():
+                with contextlib.suppress(ConnectionError):
+                    await self._ensure_connected()
+            await asyncio.sleep(config.SERIAL_RECONNECT_POLL_S)
+
+    async def aclose(self) -> None:
+        if self._watch_task is not None:
+            self._watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._watch_task
+
+    def on_resync(self, callback: Callable[[], Awaitable[None]]) -> None:
+        self._resync_callback = callback
 
     @classmethod
     def open(cls, port_name: str, baud: int = config.SERIAL_BAUD) -> SerialTransport:
@@ -127,10 +175,18 @@ class SerialTransport(Transport):
                 if not raw:
                     continue
                 line = raw.decode("ascii", "replace")
+                if line.strip() == RESYNC_COMMAND:
+                    loop.call_soon_threadsafe(self._fire_resync)
+                    continue
                 # Stamp with the on-screen prompt's generation at read time.
                 loop.call_soon_threadsafe(inbox.put_nowait, (line, self._generation))
 
         threading.Thread(target=pump, name="keytag-serial", daemon=True).start()
+
+    def _fire_resync(self) -> None:
+        callback = self._resync_callback
+        if callback is not None:
+            asyncio.ensure_future(callback())
 
     def _ensure_reader(self) -> None:
         if self._reader_started:
@@ -173,6 +229,9 @@ class SerialTransport(Transport):
 
     async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
         await self._best_effort(encode_plan_usage(session_pct, week_pct))
+
+    async def send_reminder(self, kind: str) -> None:
+        await self._best_effort(encode_reminder(kind))
 
     async def _best_effort(self, payload: bytes) -> None:
         # Unlike BLE/WS, serial has no other trigger that ever reconnects it (no

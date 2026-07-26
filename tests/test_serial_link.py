@@ -19,6 +19,7 @@ from transport.serial_link import (
     encode_frame,
     encode_idle,
     encode_mood,
+    encode_reminder,
 )
 
 
@@ -42,6 +43,11 @@ def test_encode_idle_is_the_idle_command():
 def test_encode_mood():
     assert encode_mood("focus") == b"MOOD FOCUS\n"  # normalizes case
     assert encode_mood("bogus") == b"MOOD AWAKE\n"  # unknown falls back
+
+
+def test_encode_reminder():
+    assert encode_reminder("gym") == b"REMIND GYM\n"  # normalizes case
+    assert encode_reminder("bogus") == b"REMIND \n"  # unknown -> blank; no sensible fallback
 
 
 def test_decode_button_maps_allow_and_deny_only():
@@ -83,6 +89,70 @@ def test_serial_transport_pushes_a_frame_and_reads_a_button():
         return await asyncio.wait_for(task, timeout=2)
 
     assert asyncio.run(scenario()) is ALLOW
+
+
+# ---- RESYNC: a long idle-DENY press asks for a fresh push, out of band ----
+
+
+def test_start_begins_listening_before_any_prompt():
+    # Without this, the reader only starts on the first await_decision -- i.e.
+    # the first real permission prompt -- so a RESYNC (or any button) pressed
+    # while idle before that ever happens would be silently dropped, unread.
+    async def scenario():
+        transport = SerialTransport(_FakePort())
+        await transport.start()
+        assert transport._reader_started
+        await transport.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_resync_line_fires_the_callback_not_the_decision_inbox():
+    async def scenario():
+        port = _FakePort()
+        transport = SerialTransport(port)
+        fired = asyncio.Event()
+
+        async def on_resync() -> None:
+            fired.set()
+
+        transport.on_resync(on_resync)
+        await transport.start()
+
+        port.feed("RESYNC\n")
+        await asyncio.wait_for(fired.wait(), timeout=2)
+        assert transport._inbox.empty()  # never mistaken for a button/decision line
+        await transport.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_watcher_reconnects_without_needing_a_write(monkeypatch):
+    # A physical replug is only noticed by the reader thread, which is dead
+    # until something reconnects it -- and push_screen/_best_effort only ever
+    # reconnect as a side effect of trying to write. Without the background
+    # watcher, a RESYNC (or any button) sent right after replugging would
+    # arrive at a bridge with no one listening. This proves recovery happens
+    # on its own, with no write ever attempted.
+    monkeypatch.setattr(config, "SERIAL_RECONNECT_POLL_S", 0.01)
+
+    async def scenario():
+        dead, fresh = _FakePort(), _FakePort()
+        transport = SerialTransport(dead, reconnect=lambda: fresh)
+        await transport.start()
+
+        transport._disconnected.set()  # simulate the reader noticing a drop
+
+        for _ in range(200):
+            if transport._port is fresh and not transport._disconnected.is_set():
+                break
+            await asyncio.sleep(0.01)
+
+        assert transport._port is fresh
+        assert not transport._disconnected.is_set()
+        await transport.aclose()
+
+    asyncio.run(scenario())
 
 
 # ---- reconnect after a physical unplug/replug ----

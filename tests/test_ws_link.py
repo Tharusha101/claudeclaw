@@ -64,6 +64,25 @@ def test_push_and_button_round_trip():
     assert asyncio.run(scenario()) is ALLOW
 
 
+def test_resync_message_fires_the_callback_not_the_decision_inbox():
+    async def scenario():
+        t = WsTransport("tok")
+        ws = _FakeWS()
+        t._ws = ws
+        t._connected.set()
+        fired = asyncio.Event()
+
+        async def on_resync() -> None:
+            fired.set()
+
+        t.on_resync(on_resync)
+        t._feed("RESYNC\n")
+        await asyncio.wait_for(fired.wait(), timeout=2)
+        assert t._inbox.empty()  # never mistaken for a button/decision line
+
+    asyncio.run(scenario())
+
+
 def test_push_with_no_keytag_fails_closed(monkeypatch):
     # No keytag connected: push_screen must raise (the handler then denies).
     monkeypatch.setattr(config, "WS_CONNECT_WAIT_S", 0.05)

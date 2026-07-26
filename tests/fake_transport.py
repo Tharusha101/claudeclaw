@@ -21,6 +21,7 @@ class FakeTransport(Transport):
         self.moods: list[str] = []
         self.usages: list[tuple[float, int, int]] = []
         self.plan_usages: list[tuple[int, int]] = []
+        self.reminders: list[str] = []
 
     async def push_screen(self, lines: list[str]) -> None:
         self.screens.append(lines)
@@ -41,3 +42,6 @@ class FakeTransport(Transport):
 
     async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
         self.plan_usages.append((session_pct, week_pct))
+
+    async def send_reminder(self, kind: str) -> None:
+        self.reminders.append(kind)

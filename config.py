@@ -57,6 +57,11 @@ SERIAL_BAUD = 115200
 # mirrors BLE's below.
 SERIAL_RECONNECT_TRIES = 3
 SERIAL_RECONNECT_BACKOFF_S = 1.5
+# How often a background watcher checks a disconnected port for a reconnect.
+# Nothing else retries proactively -- push_screen/_best_effort only reconnect
+# when something tries to write -- so without this, the reader that would
+# receive a RESYNC button press stays dead until the next prompt or poll tick.
+SERIAL_RECONNECT_POLL_S = 2.0
 
 # ── BLE link to the C3 keytag (phase 2b) ────────────────────────────────────
 # Nordic UART Service: the same line protocol, carried over BLE characteristics.
@@ -68,6 +73,11 @@ BLE_SCAN_TIMEOUT_S = 15.0
 BLE_CHUNK = 20  # write frames in MTU-safe chunks; the keytag reassembles by newline
 BLE_RECONNECT_TRIES = 3  # reconnect attempts before a prompt fails closed (deny)
 BLE_RECONNECT_BACKOFF_S = 1.5
+# How often a background watcher checks a dropped link for a reconnect, same
+# reasoning as SERIAL_RECONNECT_POLL_S above. A full retry cycle (scan + up to
+# BLE_RECONNECT_TRIES attempts) can itself take a while, so this doesn't need
+# to be as tight as the serial one.
+BLE_RECONNECT_POLL_S = 15.0
 
 # ── WiFi / WebSocket link to the C3 keytag (phase 2c, "away" mode) ───────────
 # The keytag is the client: it connects out to this endpoint (works behind a
@@ -75,6 +85,21 @@ BLE_RECONNECT_BACKOFF_S = 1.5
 # bridge's environment; baked into the firmware's secrets.h).
 WS_PATH = "/keytag"
 WS_CONNECT_WAIT_S = 10.0  # how long push_screen waits for the keytag to (re)connect
+
+# ── Daily reminders (idle-screen nudges, real wall-clock time) ─────────────
+# Scheduling lives here, not on the device -- the PC's clock is always correct
+# and changing a time is a config edit, never a reflash, same reasoning as
+# render.py keeping all screen layout off the firmware. PLACEHOLDER TIMES:
+# tell the bridge your real schedule and update these.
+TIMEZONE = "Asia/Colombo"
+GYM_TIME = "06:30"  # HH:MM, local, fires once when crossed
+CODE_TIME = "09:00"  # HH:MM, local, fires once when crossed
+SUPPLEMENT_TIMES = ["08:00", "20:00"]  # HH:MM, local, each fires once/day
+WATER_INTERVAL_MIN = 60  # recurring nudge, every N minutes...
+WATER_ACTIVE_START = "08:00"  # ...but only within this window, so it's silent overnight
+WATER_ACTIVE_END = "22:00"
+REMINDER_GRACE_MIN = 90  # more than this late (bridge was off) is skipped, not shown stale
+REMINDER_POLL_S = 30.0  # how often the bridge checks whether something's due
 
 # ── Real plan-limit usage (the actual `/usage` command, not OTLP) ───────────
 # There is no API/hook/OTLP metric for the real session/week plan-limit bars —

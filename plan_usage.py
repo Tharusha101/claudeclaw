@@ -62,13 +62,19 @@ async def fetch_plan_usage(timeout_s: float = 20.0) -> PlanUsage | None:
     return parse_usage_output(out.decode("utf-8", errors="replace"))
 
 
+async def sync_once(transport: Transport) -> None:
+    """Fetch and push the real plan usage a single time. Shared by the periodic
+    poll and an on-demand resync (a long button press on the keytag)."""
+    usage = await fetch_plan_usage()
+    if usage is not None:
+        try:
+            await transport.set_plan_usage(usage.session_pct, usage.week_pct)
+        except Exception:  # noqa: BLE001 - cosmetic; never take the bridge down
+            pass
+
+
 async def poll_forever(transport: Transport, interval_s: float) -> None:
     """Fetch and push the real plan usage on a loop. Runs until cancelled."""
     while True:
-        usage = await fetch_plan_usage()
-        if usage is not None:
-            try:
-                await transport.set_plan_usage(usage.session_pct, usage.week_pct)
-            except Exception:  # noqa: BLE001 - cosmetic; never take the bridge down
-                pass
+        await sync_once(transport)
         await asyncio.sleep(interval_s)

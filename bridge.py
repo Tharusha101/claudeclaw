@@ -19,6 +19,7 @@ from fastapi import FastAPI
 
 import config
 import plan_usage
+import reminders
 from hooks import router
 from telemetry import UsageMeter
 from transport.base import Transport
@@ -39,13 +40,27 @@ def create_app(
     async def lifespan(app: FastAPI):
         if connect is not None:  # BLE: connect inside the running loop
             app.state.transport = await connect()
-        task = None
-        if poll_plan_usage:  # real /usage bars: only for actual device runs, never tests
-            task = asyncio.create_task(
-                plan_usage.poll_forever(app.state.transport, config.PLAN_USAGE_POLL_S)
+        if poll_plan_usage:  # real device extras: only for actual device runs, never tests
+            # Register before start() so a RESYNC that arrives the instant the
+            # reader comes up is never dropped for lack of a listener.
+            app.state.transport.on_resync(lambda: plan_usage.sync_once(app.state.transport))
+        await app.state.transport.start()  # begin listening for inbound lines now
+        tasks: list[asyncio.Task[None]] = []
+        if poll_plan_usage:
+            tasks.append(
+                asyncio.create_task(
+                    plan_usage.poll_forever(app.state.transport, config.PLAN_USAGE_POLL_S)
+                )
+            )
+            tasks.append(
+                asyncio.create_task(
+                    reminders.poll_forever(
+                        app.state.transport, reminders.ReminderScheduler(), config.REMINDER_POLL_S
+                    )
+                )
             )
         yield
-        if task is not None:
+        for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

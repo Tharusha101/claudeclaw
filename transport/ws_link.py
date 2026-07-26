@@ -14,6 +14,7 @@ then raises so the hook handler denies — we never approve a prompt no one saw.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import config
@@ -21,11 +22,13 @@ from approvals import accepts
 from models import Decision
 from transport.base import Transport
 from transport.serial_link import (
+    RESYNC_COMMAND,
     decode_button,
     encode_frame,
     encode_idle,
     encode_mood,
     encode_plan_usage,
+    encode_reminder,
     encode_usage,
 )
 
@@ -39,10 +42,14 @@ class WsTransport(Transport):
         self._buf = ""
         self._connected = asyncio.Event()
         self._disconnected = asyncio.Event()
+        self._resync_callback: Callable[[], Awaitable[None]] | None = None
 
     @property
     def token(self) -> str:
         return self._token
+
+    def on_resync(self, callback: Callable[[], Awaitable[None]]) -> None:
+        self._resync_callback = callback
 
     async def register(self, websocket: Any) -> None:
         """Own a freshly accepted keytag socket for its lifetime. Called by the
@@ -67,6 +74,10 @@ class WsTransport(Transport):
         self._buf += text
         while "\n" in self._buf:
             line, self._buf = self._buf.split("\n", 1)
+            if line.strip() == RESYNC_COMMAND:
+                if self._resync_callback is not None:
+                    asyncio.ensure_future(self._resync_callback())
+                continue
             self._inbox.put_nowait((line, self._generation))
 
     async def _require_connection(self) -> None:
@@ -93,10 +104,17 @@ class WsTransport(Transport):
     async def set_plan_usage(self, session_pct: int, week_pct: int) -> None:
         await self._best_effort(encode_plan_usage(session_pct, week_pct))
 
+    async def send_reminder(self, kind: str) -> None:
+        await self._best_effort(encode_reminder(kind))
+
     async def _best_effort(self, payload: bytes) -> None:
-        if self._ws is None:
-            return
+        # The keytag dials back in on its own (firmware auto-reconnects), so
+        # unlike BLE/serial this doesn't need a bridge-side watcher -- but it
+        # does need to wait for that reconnect rather than bailing the instant
+        # `self._ws` happens to be None, or a mood/usage/plan-usage push sent
+        # right as the socket drops just goes nowhere with nothing to retry it.
         try:
+            await self._require_connection()
             await self._ws.send_text(payload.decode("ascii"))
         except Exception:  # noqa: BLE001 - cosmetic
             self._disconnected.set()

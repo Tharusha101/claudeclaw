@@ -109,3 +109,46 @@ def test_push_reconnects_after_a_drop():
 
     reconnected, wrote_frame = asyncio.run(scenario())
     assert reconnected and wrote_frame
+
+
+def test_resync_notification_fires_the_callback_not_the_decision_inbox():
+    async def scenario():
+        fake = _FakeClient()
+        t = _transport(fake)
+        await t._establish()
+        fired = asyncio.Event()
+
+        async def on_resync() -> None:
+            fired.set()
+
+        t.on_resync(on_resync)
+        fake.notify("RESYNC\n")
+        await asyncio.wait_for(fired.wait(), timeout=2)
+        assert t._inbox.empty()  # never mistaken for a button/decision line
+
+    asyncio.run(scenario())
+
+
+def test_watcher_reconnects_without_needing_a_write(monkeypatch):
+    # Nothing else reconnects BLE proactively -- push_screen only does it as a
+    # side effect of a real prompt. This proves recovery happens on its own,
+    # with no write ever attempted, so a RESYNC sent right after coming back in
+    # range actually has a live connection to arrive on.
+    monkeypatch.setattr(config, "BLE_RECONNECT_POLL_S", 0.01)
+
+    async def scenario():
+        first, second = _FakeClient(), _FakeClient()
+        t = _transport(first, second)
+        await t._establish()  # connects `first`
+        await t.start()  # starts the watcher
+        first.drop()  # link dies
+
+        for _ in range(200):
+            if t._client is not None and t._client.is_connected:
+                break
+            await asyncio.sleep(0.01)
+
+        assert t._client is second and t._client.is_connected
+        await t.aclose()
+
+    asyncio.run(scenario())

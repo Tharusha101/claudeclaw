@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 trace.jsonl
+bridge.log
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
@@ -12,3 +13,7 @@ firmware/.vscode/
 
 # Firmware secrets (WiFi creds + keytag token) — never commit
 firmware/src/secrets.h
+
+# Bad Apple source video (13MB, copyrighted) — only the encoded
+# firmware/src/badapple_data.h ships; the raw clip is a local build input.
+badapple/
